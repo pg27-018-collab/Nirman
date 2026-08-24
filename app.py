@@ -8,6 +8,7 @@ from datetime import datetime
 from flask import Flask, render_template, jsonify, request, send_from_directory
 import pandas as pd
 from whatsapp_bot import WhatsAppBot
+import shutil
 import main as core_main
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -469,6 +470,55 @@ def get_sessions():
         sessions.append("Default")
         
     return jsonify(sessions)
+
+@app.route("/api/delete-session", methods=["POST"])
+def delete_session():
+    global job_status
+    with job_lock:
+        if job_status["status"] != "idle":
+            return jsonify({"error": "Cannot delete profile while a process is running."}), 400
+            
+    data = request.json or {}
+    session_phone = data.get("session_phone", "").strip()
+    if not session_phone:
+        return jsonify({"error": "No profile specified."}), 400
+        
+    if session_phone == "Default":
+        # Clear default folder
+        session_dir = os.path.abspath(".session/Default")
+        if os.path.exists(session_dir):
+            try:
+                shutil.rmtree(session_dir)
+            except Exception as e:
+                return jsonify({"error": f"Failed to clear Default folder: {str(e)}"}), 500
+        
+        # Clear legacy browser files directly under .session/
+        root_session = os.path.abspath(".session")
+        if os.path.exists(root_session):
+            try:
+                for name in os.listdir(root_session):
+                    path = os.path.join(root_session, name)
+                    if os.path.isfile(path):
+                        os.remove(path)
+                    elif name in ("BrowserMetrics", "GrShaderCache", "Local State", "lock", "SingletonLock"):
+                        if os.path.isdir(path):
+                            shutil.rmtree(path)
+                        else:
+                            os.remove(path)
+            except Exception as e:
+                print(f"Warning clearing legacy files: {e}")
+        return jsonify({"message": "Default session profile cleared successfully."})
+        
+    # Clear custom phone session folder
+    session_dir = os.path.abspath(f".session/{session_phone}")
+    if os.path.exists(session_dir):
+        try:
+            shutil.rmtree(session_dir)
+            return jsonify({"message": f"WhatsApp profile '{session_phone}' deleted successfully."})
+        except Exception as e:
+            return jsonify({"error": f"Failed to delete profile: {str(e)}"}), 500
+    else:
+        return jsonify({"error": f"Profile '{session_phone}' directory not found."}), 404
 
 @app.route("/api/login-whatsapp", methods=["POST"])
 def login_whatsapp():

@@ -243,14 +243,20 @@ async function handleFileUpload(file) {
 function setupActionButtons() {
   const loginBtn = document.getElementById("loginBtn");
   const sendBtn = document.getElementById("sendBtn");
+  const deleteBtn = document.getElementById("deleteSessionBtn");
   
   loginBtn.addEventListener("click", async () => {
     const newSessionInput = document.getElementById("newSessionPhone");
-    let sessionToUse = currentSession;
+    let sessionToUse = newSessionInput.value.trim();
     
-    // If a phone number is entered in the input, use it to connect a new account
-    if (newSessionInput.value.trim() !== "") {
-      sessionToUse = newSessionInput.value.trim();
+    if (sessionToUse === "") {
+      const promptPhone = prompt("Enter a phone number or profile name to connect a new user:\n(Or leave blank to re-login/re-scan for the currently selected profile)");
+      if (promptPhone === null) return; // User clicked Cancel
+      if (promptPhone.trim() !== "") {
+        sessionToUse = promptPhone.trim();
+      } else {
+        sessionToUse = currentSession;
+      }
     }
     
     try {
@@ -265,6 +271,13 @@ function setupActionButtons() {
         showToast("WhatsApp Browser Opened. Scan QR Code!");
         newSessionInput.value = ""; // Clear input
         currentSession = sessionToUse; // Switch selection to this profile
+        
+        // Reload session list and switch view
+        await loadSessions();
+        document.getElementById("sessionSelect").value = currentSession;
+        loadStatus();
+        loadBirthdays();
+        
         startJobPolling();
       } else {
         showToast(data.error || "Failed to launch login", "error");
@@ -292,6 +305,32 @@ function setupActionButtons() {
         startJobPolling();
       } else {
         showToast(data.error || "Failed to start sending", "error");
+      }
+    } catch (err) {
+      showToast("Server communication error", "error");
+    }
+  });
+
+  deleteBtn.addEventListener("click", async () => {
+    const confirmation = confirm(`Are you sure you want to remove the profile "${currentSession}"?\nThis will log out the user and delete all cache files.`);
+    if (!confirmation) return;
+    
+    try {
+      const res = await fetch("/api/delete-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_phone: currentSession })
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        showToast(data.message || "Profile deleted successfully.");
+        currentSession = "Default"; // Reset to default session
+        await loadSessions();
+        loadStatus();
+        loadBirthdays();
+      } else {
+        showToast(data.error || "Failed to delete profile", "error");
       }
     } catch (err) {
       showToast("Server communication error", "error");

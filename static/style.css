@@ -361,6 +361,17 @@ textarea {
   transform: translateY(-1px);
 }
 
+.btn-danger {
+  background-color: var(--text-critical);
+  color: #fff;
+  box-shadow: 0 4px 14px 0 rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover {
+  background-color: #dc2626;
+  transform: translateY(-1px);
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

@@ -15,6 +15,20 @@ class WhatsAppBot:
 
     def start(self):
         print("Starting browser...")
+        
+        # Clean any lock files left from previous crashes
+        try:
+            lock_path = os.path.join(self.user_data_dir, "SingletonLock")
+            if os.path.exists(lock_path) or os.path.islink(lock_path):
+                os.remove(lock_path)
+                print(f"Cleaned up browser SingletonLock in {self.user_data_dir}")
+            std_lock = os.path.join(self.user_data_dir, "lock")
+            if os.path.exists(std_lock):
+                os.remove(std_lock)
+                print(f"Cleaned up browser lock in {self.user_data_dir}")
+        except Exception as lock_err:
+            print(f"Warning clearing lock files: {lock_err}")
+            
         self.playwright = sync_playwright().start()
         
         # WhatsApp Web detection bypass options
