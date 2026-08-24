@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Student Birthday Automation Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="logo-container">
+      <span class="logo-icon">🎂</span>
+      <span class="logo-text">BirthdayBot</span>
+    </div>
+    <div class="header-status">
+      <span>WhatsApp Status:</span>
+      <div id="whatsappHeaderStatus" class="status-badge inactive">
+        <span class="badge-dot"></span> Checking Status...
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Grid Layout -->
+  <main class="container">
+    
+    <!-- Left Column: Birthdays & Stats -->
+    <div class="primary-content">
+      
+      <!-- Stats Summary -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="statTotalStudents">-</div>
+          <div class="stat-label">Total Students</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statBirthdaysToday" style="color: #a5b4fc;">-</div>
+          <div class="stat-label">Birthdays Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statSentToday" style="color: var(--text-success);">-</div>
+          <div class="stat-label">Sent Wishes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statPending" style="color: #fca5a5;">-</div>
+          <div class="stat-label">Pending Wishes</div>
+        </div>
+      </div>
+
+      <!-- Birthdays List Card -->
+      <div class="card">
+        <h2 class="card-title">📅 Today's Birthdays</h2>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Student Name</th>
+                <th>Phone Number</th>
+                <th>Birthday (in Excel)</th>
+                <th>Status</th>
+                <th>Excel Row</th>
+              </tr>
+            </thead>
+            <tbody id="birthdayTableBody">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                  Loading today's birthdays...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Console Log Card (Appears during runs) -->
+      <div class="card" id="consolePanel" style="display: none;">
+        <h2 class="card-title">🖥️ Active Execution Console <span class="status-pulse"></span></h2>
+        <div class="console-log" id="consoleLogs">
+          <div class="log-entry">Waiting for process startup...</div>
+        </div>
+      </div>
+      
+    </div>
+
+    <!-- Right Column: Settings & Uploads -->
+    <div class="sidebar-content">
+      
+      <!-- Actions Panel -->
+      <div class="card">
+        <h2 class="card-title">🎮 Controller</h2>
+        
+        <div class="form-group">
+          <button id="loginBtn" class="btn btn-secondary" style="margin-bottom: 0.75rem;">
+            🔑 Connect / Login to WhatsApp
+          </button>
+          <label style="font-size: 0.8rem; margin-top: -0.25rem;">
+            Open WhatsApp Web window to scan QR code and authenticate.
+          </label>
+        </div>
+
+        <div class="form-group" style="margin-top: 1.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <input type="checkbox" id="forceSendCheck" style="width: auto; cursor: pointer;">
+            <label for="forceSendCheck" style="margin-bottom: 0; cursor: pointer; user-select: none;">
+              Force resend (Ignore daily sent log)
+            </label>
+          </div>
+          
+          <button id="sendBtn" class="btn btn-primary">
+            🚀 Run Birthday Wishes Automation
+          </button>
+        </div>
+      </div>
+
+      <!-- Spreadsheet Management -->
+      <div class="card">
+        <h2 class="card-title">📊 Student Directory</h2>
+        
+        <!-- Drag and Drop Uploader -->
+        <div class="upload-container" id="dropzone">
+          <div class="upload-icon">📁</div>
+          <div class="upload-text">Drag & drop spreadsheet here</div>
+          <div class="upload-hint">or click to browse local files</div>
+          <input type="file" id="fileInput" accept=".xlsx, .xls">
+        </div>
+        
+        <div id="excelStatusHint" style="font-size: 0.85rem; text-align: center; font-weight: 500;">
+          Checking Excel sheet...
+        </div>
+      </div>
+
+      <!-- Settings Panel -->
+      <div class="card">
+        <h2 class="card-title">⚙️ Configuration</h2>
+        <form id="configForm">
+          
+          <div class="form-group">
+            <label for="excel_path">Excel File Path</label>
+            <input type="text" id="excel_path" required>
+          </div>
+
+          <div class="form-group">
+            <label>Column Mappings (Headers in Excel)</label>
+            <div class="config-row-grid">
+              <div>
+                <label style="font-size: 0.75rem;" for="col_name">Name</label>
+                <input type="text" id="col_name" required>
+              </div>
+              <div>
+                <label style="font-size: 0.75rem;" for="col_phone">Phone</label>
+                <input type="text" id="col_phone" required>
+              </div>
+              <div>
+                <label style="font-size: 0.75rem;" for="col_birthday">Birthday</label>
+                <input type="text" id="col_birthday" required>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="default_country_code">Default Country Code</label>
+            <input type="text" id="default_country_code" placeholder="+91">
+          </div>
+
+          <div class="form-group">
+            <label for="message_template">Message Template</label>
+            <textarea id="message_template" required></textarea>
+            <label style="font-size: 0.75rem; margin-top: 0.25rem;">
+              Use <code>{Name}</code> to insert the student's name dynamically.
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label>Random Sending Delay Range (Seconds)</label>
+            <div class="config-row-grid">
+              <div>
+                <label style="font-size: 0.75rem;" for="min_delay_seconds">Min</label>
+                <input type="number" id="min_delay_seconds" min="5" required>
+              </div>
+              <div>
+                <label style="font-size: 0.75rem;" for="max_delay_seconds">Max</label>
+                <input type="number" id="max_delay_seconds" min="6" required>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" id="saveConfigBtn" class="btn btn-success" style="margin-top: 0.5rem;">
+            💾 Save Settings
+          </button>
+        </form>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <p>WhatsApp Birthday Automation Dashboard &copy; 2026. Localhost application.</p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
