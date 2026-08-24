@@ -36,12 +36,25 @@ class WhatsAppBot:
             "--disable-blink-features=AutomationControlled",
         ]
         
-        self.browser = self.playwright.chromium.launch_persistent_context(
-            user_data_dir=self.user_data_dir,
-            headless=self.headless,
-            args=launch_args,
-            no_viewport=True  # Use full window size
-        )
+        try:
+            self.browser = self.playwright.chromium.launch_persistent_context(
+                user_data_dir=self.user_data_dir,
+                headless=self.headless,
+                args=launch_args,
+                no_viewport=True  # Use full window size
+            )
+        except Exception as launch_err:
+            if not self.headless:
+                print(f"Warning: Headful browser launch failed: {launch_err}. Falling back to Headless mode...")
+                self.headless = True
+                self.browser = self.playwright.chromium.launch_persistent_context(
+                    user_data_dir=self.user_data_dir,
+                    headless=True,
+                    args=launch_args,
+                    no_viewport=True
+                )
+            else:
+                raise launch_err
         self.page = self.browser.pages[0]
         # Set user agent to a standard browser to avoid bot detection
         self.page.set_extra_http_headers({

@@ -360,6 +360,10 @@ function startJobPolling() {
         statusPollInterval = null;
         setActionsDisabled(false);
         showToast("Process completed.");
+        
+        // Hide QR Code Container on completion
+        document.getElementById("qrCodeContainer").style.display = "none";
+        
         // Reload all data
         loadSessions().then(() => {
           loadStatus();
@@ -370,7 +374,25 @@ function startJobPolling() {
         // Update button text to reflect work
         if (job.status === "running_login") {
           document.getElementById("loginBtn").innerHTML = `<span class="spinner"></span> Logging In...`;
+          
+          // Poll QR code status from server
+          try {
+            const qrRes = await fetch(`/api/qr-status?session=${currentSession}`);
+            const qrData = await qrRes.json();
+            const qrContainer = document.getElementById("qrCodeContainer");
+            const qrImg = document.getElementById("qrCodeImg");
+            
+            if (qrData.qr_available) {
+              qrImg.src = qrData.qr_url;
+              qrContainer.style.display = "block";
+            } else {
+              qrContainer.style.display = "none";
+            }
+          } catch (qrErr) {
+            console.error("Error polling QR code:", qrErr);
+          }
         } else if (job.status === "running_send") {
+          document.getElementById("qrCodeContainer").style.display = "none"; // Ensure QR is hidden
           const countStr = job.total_count ? `(${job.success_count + job.failed_count}/${job.total_count})` : "";
           document.getElementById("sendBtn").innerHTML = `<span class="spinner"></span> Sending ${countStr}...`;
         }

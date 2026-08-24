@@ -139,6 +139,17 @@
           </div>
         </div>
 
+        <!-- WhatsApp QR Code Streaming Box -->
+        <div id="qrCodeContainer" style="display: none; text-align: center; margin-top: 1rem; margin-bottom: 1.5rem; padding: 1rem; border: 1px dashed var(--glass-border); border-radius: 0.75rem; background: rgba(0, 0, 0, 0.3);">
+          <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 0.75rem; color: #fff; display: flex; align-items: center; justify-content: center; gap: 0.35rem;">
+            <span class="status-pulse" style="background-color: var(--accent);"></span> Streamed QR Code
+          </div>
+          <img id="qrCodeImg" src="" alt="WhatsApp QR Code" style="width: 200px; height: 200px; border: 4px solid #fff; border-radius: 0.5rem; background-color: #fff; margin: 0 auto; display: block; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.75rem; line-height: 1.4;">
+            Open WhatsApp on your phone → Settings → Linked Devices → Link a Device, then point your camera here.
+          </div>
+        </div>
+
         <div class="form-group" style="margin-top: 1.5rem;">
           <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
             <input type="checkbox" id="forceSendCheck" style="width: auto; cursor: pointer;">

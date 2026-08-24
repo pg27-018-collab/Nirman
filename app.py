@@ -13,6 +13,15 @@ import main as core_main
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
+# Auto-install Playwright browsers on startup to enable instant sharing compatibility
+try:
+    import subprocess
+    print("Checking and installing Playwright Chromium driver...")
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    print("Playwright Chromium check completed successfully.")
+except Exception as e:
+    print(f"Warning running playwright install check: {e}")
+
 # Job status tracker
 job_lock = threading.Lock()
 job_status = {
@@ -77,6 +86,17 @@ def run_login_thread(session_phone="Default"):
         job_status["status"] = "running_login"
         job_status["logs"] = []
     
+    # Path to save screenshots
+    qr_filename = f"qr_{session_phone}.png"
+    qr_path = os.path.join(app.static_folder, qr_filename)
+    
+    # Delete pre-existing QR code screenshot if exists
+    if os.path.exists(qr_path):
+        try:
+            os.remove(qr_path)
+        except Exception as remove_err:
+            print(f"Warning: could not remove old QR screenshot: {remove_err}")
+            
     add_log(f"Starting browser for profile '{session_phone}'...")
     session_dir = f".session/{session_phone}"
     bot = WhatsAppBot(user_data_dir=session_dir, headless=False)
@@ -105,15 +125,35 @@ def run_login_thread(session_phone="Default"):
             # Check if QR code is visible (Logged Out)
             if bot.page.locator(qr_selector).count() > 0:
                 if not qr_alert_shown:
-                    add_log("⚠️ NOT LOGGED IN. Please look at the Chrome browser window and scan the QR code using your phone.")
+                    add_log("⚠️ NOT LOGGED IN. Displaying QR code on dashboard. Please scan it.")
                     qr_alert_shown = True
                 
-                # Wait in a loop
+                # Take screenshot of the QR element and save it to the static folder
+                try:
+                    qr_el = bot.page.locator(qr_selector).first
+                    if qr_el.is_visible():
+                        qr_el.screenshot(path=qr_path)
+                except Exception as qr_err:
+                    print(f"Error capturing QR: {qr_err}")
+                
+                # Wait in a loop while scanning
                 while time.time() - start_time < timeout_sec:
                     if bot.page.locator(chatlist_selector).count() > 0:
                         logged_in = True
                         add_log("✅ Login detected! Scan complete.")
                         break
+                        
+                    # Re-capture the QR code screenshot in case it refreshed
+                    try:
+                        qr_el = bot.page.locator(qr_selector).first
+                        if qr_el.is_visible():
+                            qr_el.screenshot(path=qr_path)
+                        elif os.path.exists(qr_path):
+                            # QR is gone (user might have scanned it)
+                            os.remove(qr_path)
+                    except Exception as qr_err:
+                        print(f"Error refreshing QR capture: {qr_err}")
+                        
                     time.sleep(2)
                 break
                 
@@ -126,6 +166,12 @@ def run_login_thread(session_phone="Default"):
         add_log(f"❌ Error during login: {str(e)}")
     finally:
         bot.close()
+        # Clean up QR code file on close
+        if os.path.exists(qr_path):
+            try:
+                os.remove(qr_path)
+            except Exception as e:
+                print(f"Warning: could not delete QR file during cleanup: {e}")
         with job_lock:
             job_status["status"] = "idle"
         add_log("Login runner thread finished.")
@@ -519,6 +565,20 @@ def delete_session():
             return jsonify({"error": f"Failed to delete profile: {str(e)}"}), 500
     else:
         return jsonify({"error": f"Profile '{session_phone}' directory not found."}), 404
+
+@app.route("/api/qr-status")
+def get_qr_status():
+    session_phone = request.args.get("session", "Default").strip()
+    if not session_phone:
+        session_phone = "Default"
+    qr_filename = f"qr_{session_phone}.png"
+    qr_path = os.path.join(app.static_folder, qr_filename)
+    if os.path.exists(qr_path):
+        return jsonify({
+            "qr_available": True,
+            "qr_url": f"/static/{qr_filename}?t={int(time.time() * 1000)}"
+        })
+    return jsonify({"qr_available": False})
 
 @app.route("/api/login-whatsapp", methods=["POST"])
 def login_whatsapp():
