@@ -36,12 +36,14 @@ class WhatsAppBot:
             "--disable-blink-features=AutomationControlled",
         ]
         
+        user_agent_str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         try:
             self.browser = self.playwright.chromium.launch_persistent_context(
                 user_data_dir=self.user_data_dir,
                 headless=self.headless,
                 args=launch_args,
-                no_viewport=True  # Use full window size
+                no_viewport=True,  # Use full window size
+                user_agent=user_agent_str
             )
         except Exception as launch_err:
             if not self.headless:
@@ -51,15 +53,12 @@ class WhatsAppBot:
                     user_data_dir=self.user_data_dir,
                     headless=True,
                     args=launch_args,
-                    no_viewport=True
+                    no_viewport=True,
+                    user_agent=user_agent_str
                 )
             else:
                 raise launch_err
         self.page = self.browser.pages[0]
-        # Set user agent to a standard browser to avoid bot detection
-        self.page.set_extra_http_headers({
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        })
         print("Browser started successfully.")
 
     def close(self):
