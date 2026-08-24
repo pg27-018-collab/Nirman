@@ -97,84 +97,82 @@ def run_login_thread(session_phone, run_headless=True):
         except Exception as remove_err:
             print(f"Warning: could not remove old QR screenshot: {remove_err}")
             
-    add_log(f"Starting browser for profile '{session_phone}' (headless={run_headless})...")
+    logged_in = False
     session_dir = f".session/{session_phone}"
-    bot = WhatsAppBot(user_data_dir=session_dir, headless=run_headless)
-    try:
-        bot.start()
-        add_log("Browser launched. Checking login status (waiting for QR code if not logged in)...")
-        # Let's check login with a timeout of 120s
-        # Custom logging behavior during login check
-        bot.page.goto("https://web.whatsapp.com/")
-        
-        chatlist_selector = 'div[data-testid="chat-list"], div#pane-side'
-        qr_selector = 'canvas, div[data-testid="qrcode"]'
-        
-        start_time = time.time()
-        timeout_sec = 120
-        logged_in = False
-        qr_alert_shown = False
-        
-        while time.time() - start_time < timeout_sec:
-            # Check if chat list exists (Logged In)
-            if bot.page.locator(chatlist_selector).count() > 0:
-                logged_in = True
-                add_log("✅ Login successful!")
+    
+    # Infinite loop to keep checking/relaunching until login is complete
+    while not logged_in:
+        # Check if the job was cancelled or set back to idle by some other action
+        with job_lock:
+            if job_status["status"] != "running_login":
+                add_log("Login connection worker cancelled/stopped.")
                 break
                 
-            # Check if QR code is visible (Logged Out)
-            if bot.page.locator(qr_selector).count() > 0:
-                if not qr_alert_shown:
-                    add_log("⚠️ NOT LOGGED IN. Displaying QR code on dashboard. Please scan it.")
-                    qr_alert_shown = True
-                
-                # Take screenshot of the QR element and save it to the static folder
-                try:
-                    qr_el = bot.page.locator(qr_selector).first
-                    if qr_el.is_visible():
-                        qr_el.screenshot(path=qr_path)
-                except Exception as qr_err:
-                    print(f"Error capturing QR: {qr_err}")
-                
-                # Wait in a loop while scanning
-                while time.time() - start_time < timeout_sec:
-                    if bot.page.locator(chatlist_selector).count() > 0:
-                        logged_in = True
-                        add_log("✅ Login detected! Scan complete.")
+        add_log(f"Relaunching login browser for '{session_phone}' (headless={run_headless})...")
+        bot = WhatsAppBot(user_data_dir=session_dir, headless=run_headless)
+        try:
+            bot.start()
+            add_log("Browser context initialized. Checking authentication status...")
+            bot.page.goto("https://web.whatsapp.com/")
+            
+            chatlist_selector = 'div[data-testid="chat-list"], div#pane-side'
+            qr_selector = 'canvas, div[data-testid="qrcode"]'
+            
+            qr_alert_shown = False
+            # Check status inside browser page loop (runs up to 10 minutes per browser instance before restarting context)
+            start_time = time.time()
+            browser_instance_timeout = 600 # 10 minutes
+            
+            while time.time() - start_time < browser_instance_timeout:
+                # Check cancellation
+                with job_lock:
+                    if job_status["status"] != "running_login":
                         break
                         
-                    # Re-capture the QR code screenshot in case it refreshed
+                # Check Logged In
+                if bot.page.locator(chatlist_selector).count() > 0:
+                    logged_in = True
+                    add_log("✅ Login successful! WhatsApp connected.")
+                    break
+                    
+                # Check QR code
+                if bot.page.locator(qr_selector).count() > 0:
+                    if not qr_alert_shown:
+                        add_log("⚠️ NOT LOGGED IN. Displaying QR code on dashboard. Please scan it.")
+                        qr_alert_shown = True
+                        
+                    # Take screenshot of the QR element and save it to the static folder
                     try:
                         qr_el = bot.page.locator(qr_selector).first
                         if qr_el.is_visible():
                             qr_el.screenshot(path=qr_path)
-                        elif os.path.exists(qr_path):
-                            # QR is gone (user might have scanned it)
-                            os.remove(qr_path)
                     except Exception as qr_err:
-                        print(f"Error refreshing QR capture: {qr_err}")
+                        print(f"Error capturing QR: {qr_err}")
                         
-                    time.sleep(2)
+                time.sleep(2)
+                
+            if logged_in:
                 break
                 
-            time.sleep(2)
-            
-        if not logged_in:
-            add_log("❌ Login check timed out or failed.")
-            
-    except Exception as e:
-        add_log(f"❌ Error during login: {str(e)}")
-    finally:
-        bot.close()
-        # Clean up QR code file on close
-        if os.path.exists(qr_path):
+        except Exception as e:
+            add_log(f"⚠️ Connection check interrupted: {str(e)}. Rechecking/relaunching browser in 5s...")
+            time.sleep(5)
+        finally:
             try:
-                os.remove(qr_path)
-            except Exception as e:
-                print(f"Warning: could not delete QR file during cleanup: {e}")
-        with job_lock:
-            job_status["status"] = "idle"
-        add_log("Login runner thread finished.")
+                bot.close()
+            except:
+                pass
+                
+    # Clean up QR code file on close
+    if os.path.exists(qr_path):
+        try:
+            os.remove(qr_path)
+        except Exception as e:
+            print(f"Warning: could not delete QR file during cleanup: {e}")
+            
+    with job_lock:
+        job_status["status"] = "idle"
+    add_log("Login connection worker finished.")
 
 def run_send_thread(session_phone="Default", force_send=False):
     global job_status
@@ -726,10 +724,6 @@ def get_sessions():
         except Exception as e:
             print(f"Error listing sessions: {e}")
             
-    # Include Default if we have a legacy login at the root .session/
-    if "Default" not in sessions and check_session_exists("Default"):
-        sessions.append("Default")
-        
     return jsonify(sessions)
 
 @app.route("/api/delete-session", methods=["POST"])

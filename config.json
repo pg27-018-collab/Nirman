@@ -1,9 +1,9 @@
 {
   "excel_path": "students.xlsx",
   "columns": {
-    "name": "STUDENTS NAME",
-    "phone": "S.NO.",
-    "birthday": "DATE OF BIRTH (DD/MM/YYYY)"
+    "name": "FULL NAME",
+    "phone": "S.No.",
+    "birthday": "DOB"
   },
   "default_country_code": "+91",
   "message_template": "Happy Birthday, {Name}! \ud83c\udf89 Wishing you a wonderful year ahead filled with happiness, success, and new opportunities. It\u2019s always special to look back at the college days and the memories, experiences, and connections that make those years so memorable.\n\nWishing you continued growth and success in everything you do. Hope you have a lovely birthday and a truly memorable year ahead! \u2728\ud83c\udf82",

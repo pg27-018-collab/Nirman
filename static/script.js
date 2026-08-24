@@ -1,7 +1,7 @@
 // Frontend logic for WhatsApp Birthday Dashboard
 
 let statusPollInterval = null;
-let currentSession = "Default";
+let currentSession = "";
 let activeTab = "today";
 let birthdayRecords = [];
 let filteredRecords = [];
@@ -292,8 +292,13 @@ function setupActionButtons() {
   if (blockerConnectBtn) {
     blockerConnectBtn.addEventListener("click", async () => {
       const blockerPhoneInput = document.getElementById("blockerPhone");
-      const phone = blockerPhoneInput.value.trim() || "Default";
+      const phone = blockerPhoneInput.value.trim();
       const showBrowserPopup = document.getElementById("blockerHeadfulCheck").checked;
+      
+      if (!phone) {
+        showToast("Please enter a phone number or profile name to connect!", "error");
+        return;
+      }
       
       currentSession = phone;
       
@@ -323,13 +328,8 @@ function setupActionButtons() {
     const showBrowserPopup = document.getElementById("dashboardHeadfulCheck").checked;
     
     if (sessionToUse === "") {
-      const promptPhone = prompt("Enter a phone number or profile name to connect a new user:\n(Or leave blank to re-login/re-scan for the currently selected profile)");
-      if (promptPhone === null) return; // User clicked Cancel
-      if (promptPhone.trim() !== "") {
-        sessionToUse = promptPhone.trim();
-      } else {
-        sessionToUse = currentSession;
-      }
+      showToast("Please enter a phone number or profile name to link account!", "error");
+      return;
     }
     
     try {
@@ -361,6 +361,11 @@ function setupActionButtons() {
   });
   
   sendBtn.addEventListener("click", async () => {
+    if (!currentSession) {
+      showToast("Please connect or select a WhatsApp account first!", "error");
+      return;
+    }
+    
     const forceSend = document.getElementById("forceSendCheck").checked;
     try {
       const res = await fetch("/api/send-wishes", {
@@ -382,6 +387,11 @@ function setupActionButtons() {
   });
 
   deleteBtn.addEventListener("click", async () => {
+    if (!currentSession) {
+      showToast("No connected profile to delete.", "error");
+      return;
+    }
+    
     const confirmation = confirm(`Are you sure you want to remove the profile "${currentSession}"?\nThis will log out the user and delete all cache files.`);
     if (!confirmation) return;
     
@@ -395,7 +405,7 @@ function setupActionButtons() {
       
       if (res.ok) {
         showToast(data.message || "Profile deleted successfully.");
-        currentSession = "Default"; // Reset to default session
+        currentSession = ""; // Reset current session
         await loadSessions();
         loadStatus();
         loadBirthdays();
@@ -577,20 +587,29 @@ async function loadSessions() {
     const select = document.getElementById("sessionSelect");
     select.innerHTML = "";
     
-    // Ensure Default is always an option
-    if (!sessions.includes("Default")) {
-      sessions.unshift("Default");
+    if (sessions.length === 0) {
+      currentSession = "";
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.innerText = "No connected accounts";
+      select.appendChild(opt);
+      return;
     }
     
     sessions.forEach(s => {
       const opt = document.createElement("option");
       opt.value = s;
-      opt.innerText = s === "Default" ? "Default Account" : `Account: ${s}`;
+      opt.innerText = `Account: ${s}`;
       select.appendChild(opt);
     });
     
-    // Select the current session
-    select.value = currentSession;
+    // Select the current session if valid, else first available
+    if (sessions.includes(currentSession)) {
+      select.value = currentSession;
+    } else {
+      currentSession = sessions[0];
+      select.value = currentSession;
+    }
   } catch (err) {
     console.error("Error loading sessions:", err);
   }
