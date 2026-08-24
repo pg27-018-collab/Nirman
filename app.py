@@ -132,7 +132,8 @@ def run_login_thread(session_phone, run_headless=True):
                 # Check Logged In
                 if bot.page.locator(chatlist_selector).count() > 0:
                     logged_in = True
-                    add_log("✅ Login successful! WhatsApp connected.")
+                    add_log("✅ Login successful! WhatsApp connected. Saving session storage to disk (please wait 8s)...")
+                    time.sleep(8)
                     break
                     
                 # Check QR code
