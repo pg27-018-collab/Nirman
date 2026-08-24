@@ -1,0 +1,12 @@
+{
+  "excel_path": "students.xlsx",
+  "columns": {
+    "name": "Name",
+    "phone": "Phone",
+    "birthday": "Birthday"
+  },
+  "default_country_code": "+91",
+  "message_template": "Happy Birthday, {Name}! 🎉🎂 Wishing you a fantastic year ahead! Hope you have a wonderful day!",
+  "min_delay_seconds": 15,
+  "max_delay_seconds": 30
+}
