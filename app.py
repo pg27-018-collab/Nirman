@@ -360,15 +360,64 @@ def get_status():
     birthdays_count = 0
     birthdays_tomorrow_count = 0
     sent_today_count = 0
+    headers = []
     
     if excel_exists:
         try:
             df = pd.read_excel(excel_path)
             total_students = len(df)
+            headers = [str(h).strip() for h in df.columns]
             
-            name_col = config.get("columns", {}).get("name", "Name")
-            phone_col = config.get("columns", {}).get("phone", "Phone")
-            bday_col = config.get("columns", {}).get("birthday", "Birthday")
+            # Heuristic guessing of column mapping config
+            columns_changed = False
+            cols_config = config.setdefault("columns", {})
+            
+            # Name guess
+            c_name = cols_config.get("name")
+            if not c_name or c_name not in headers:
+                for h in headers:
+                    if any(x in h.lower() for x in ("full name", "student name", "name", "full_name")):
+                        cols_config["name"] = h
+                        columns_changed = True
+                        break
+                else:
+                    if headers:
+                        cols_config["name"] = headers[0]
+                        columns_changed = True
+            
+            # Phone guess
+            c_phone = cols_config.get("phone")
+            if not c_phone or c_phone not in headers:
+                for h in headers:
+                    if any(x in h.lower() for x in ("phone", "contact", "number", "whatsapp", "mobile", "no")):
+                        cols_config["phone"] = h
+                        columns_changed = True
+                        break
+                else:
+                    if len(headers) > 1:
+                        cols_config["phone"] = headers[1]
+                        columns_changed = True
+                        
+            # Birthday guess
+            c_bday = cols_config.get("birthday")
+            if not c_bday or c_bday not in headers:
+                for h in headers:
+                    if any(x in h.lower() for x in ("dob", "birth", "date", "bday", "birthday")):
+                        cols_config["birthday"] = h
+                        columns_changed = True
+                        break
+                else:
+                    if len(headers) > 2:
+                        cols_config["birthday"] = headers[2]
+                        columns_changed = True
+                        
+            if columns_changed:
+                save_config(config)
+                
+            # Reload mappings from updated config
+            name_col = cols_config.get("name", "Name")
+            phone_col = cols_config.get("phone", "Phone")
+            bday_col = cols_config.get("birthday", "Birthday")
             
             # Find matching birthdays
             today = datetime.now()
@@ -415,7 +464,8 @@ def get_status():
         "birthdays_count": birthdays_count,
         "birthdays_tomorrow_count": birthdays_tomorrow_count,
         "sent_today_count": sent_today_count,
-        "pending_count": max(0, birthdays_count - sent_today_count)
+        "pending_count": max(0, birthdays_count - sent_today_count),
+        "headers": headers
     })
 
 @app.route("/api/birthdays")
@@ -472,15 +522,37 @@ def get_birthdays():
                 status = "pending"
                 
                 # Matching filters
-                if day_param == "month":
+                if day_param == "all":
+                    match = True
+                    # Determine status (passed, today, upcoming)
+                    try:
+                        bday_this_year = datetime(today.year, dob.month, dob.day)
+                    except ValueError:
+                        bday_this_year = datetime(today.year, 3, 1)
+                        
+                    today_midnight = datetime(today.year, today.month, today.day)
+                    
+                    if bday_this_year.date() < today_midnight.date():
+                        status = "passed"
+                    elif bday_this_year.date() == today_midnight.date():
+                        cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
+                        if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today.strftime("%Y-%m-%d")):
+                            records = history.get("sent_records", [])
+                            record = next((r for r in records if r["date"] == today.strftime("%Y-%m-%d") and r["phone"] == cleaned_p), None)
+                            if record and record["status"] == "invalid_number":
+                                status = "failed"
+                            else:
+                                status = "sent"
+                        else:
+                            status = "pending"
+                    else:
+                        status = "upcoming"
+                elif day_param == "month":
                     if dob.month == month_val:
                         match = True
-                        
-                        # Determine status for monthly view (passed, today, upcoming)
                         try:
                             bday_this_year = datetime(today.year, dob.month, dob.day)
                         except ValueError:
-                            # Handle Feb 29 on non-leap years
                             bday_this_year = datetime(today.year, 3, 1)
                             
                         today_midnight = datetime(today.year, today.month, today.day)
@@ -490,7 +562,6 @@ def get_birthdays():
                         elif bday_this_year.date() == today_midnight.date():
                             cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
                             if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today.strftime("%Y-%m-%d")):
-                                # Check status in history
                                 records = history.get("sent_records", [])
                                 record = next((r for r in records if r["date"] == today.strftime("%Y-%m-%d") and r["phone"] == cleaned_p), None)
                                 if record and record["status"] == "invalid_number":
@@ -511,7 +582,6 @@ def get_birthdays():
                         else:
                             status = "pending"
                             if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, target_date_str):
-                                # Check status in history
                                 records = history.get("sent_records", [])
                                 record = next((r for r in records if r["date"] == target_date_str and r["phone"] == cleaned_p), None)
                                 if record and record["status"] == "invalid_number":
@@ -525,13 +595,16 @@ def get_birthdays():
                         "phone": str(phone).strip() if pd.notna(phone) else "",
                         "birthday": str(dob_val).split(" ")[0],
                         "status": status,
+                        "month_num": dob.month,
                         "day_of_month": dob.day,
                         "row": idx + 2  # Excel is 1-based, plus header row
                     })
                     
-        # Sort results chronologically by day if in monthly view
+        # Sort results chronologically
         if day_param == "month":
             birthdays.sort(key=lambda x: x["day_of_month"])
+        elif day_param == "all":
+            birthdays.sort(key=lambda x: (x["month_num"], x["day_of_month"]))
             
         return jsonify({
             "date": target_date_str,

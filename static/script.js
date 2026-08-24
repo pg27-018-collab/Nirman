@@ -49,6 +49,18 @@ async function loadStatus() {
     const res = await fetch(`/api/status?session=${currentSession}`);
     const data = await res.json();
     
+    // Check if authenticated to show blocker or dashboard
+    const connectionBlocker = document.getElementById("connectionBlocker");
+    const dashboardApp = document.getElementById("dashboardApp");
+    
+    if (data.whatsapp_authenticated) {
+      if (connectionBlocker) connectionBlocker.style.display = "none";
+      if (dashboardApp) dashboardApp.style.display = "block";
+    } else {
+      if (connectionBlocker) connectionBlocker.style.display = "flex";
+      if (dashboardApp) dashboardApp.style.display = "none";
+    }
+    
     // Header Status Badge
     const headerStatus = document.getElementById("whatsappHeaderStatus");
     if (data.whatsapp_authenticated) {
@@ -84,6 +96,37 @@ async function loadStatus() {
       excelHint.style.color = "var(--text-critical)";
     }
     
+    // Fetch configs to map active selected values
+    const configRes = await fetch("/api/config");
+    const configData = await configRes.json();
+    
+    // Populate column mappings selectors dynamically
+    const colName = document.getElementById("col_name");
+    const colPhone = document.getElementById("col_phone");
+    const colBday = document.getElementById("col_birthday");
+    
+    if (colName && colPhone && colBday) {
+      const prevName = colName.value || configData.columns?.name;
+      const prevPhone = colPhone.value || configData.columns?.phone;
+      const prevBday = colBday.value || configData.columns?.birthday;
+      
+      colName.innerHTML = "";
+      colPhone.innerHTML = "";
+      colBday.innerHTML = "";
+      
+      if (data.headers && data.headers.length > 0) {
+        data.headers.forEach(h => {
+          colName.add(new Option(h, h));
+          colPhone.add(new Option(h, h));
+          colBday.add(new Option(h, h));
+        });
+        
+        colName.value = prevName && data.headers.includes(prevName) ? prevName : configData.columns?.name || data.headers[0];
+        colPhone.value = prevPhone && data.headers.includes(prevPhone) ? prevPhone : configData.columns?.phone || data.headers[0];
+        colBday.value = prevBday && data.headers.includes(prevBday) ? prevBday : configData.columns?.birthday || data.headers[0];
+      }
+    }
+    
   } catch (err) {
     console.error("Error loading status:", err);
   }
@@ -107,6 +150,8 @@ async function loadBirthdays() {
         const monthSelect = document.getElementById("monthSelect");
         const monthName = monthSelect ? monthSelect.options[monthSelect.selectedIndex].text : "this month";
         dayText = monthName;
+      } else if (activeTab === "all") {
+        dayText = "all directory records";
       }
       tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">🎉 No birthdays found for ${dayText}!</td></tr>`;
       return;
@@ -157,10 +202,6 @@ async function loadConfig() {
     document.getElementById("message_template").value = data.message_template || "";
     document.getElementById("min_delay_seconds").value = data.min_delay_seconds || 15;
     document.getElementById("max_delay_seconds").value = data.max_delay_seconds || 30;
-    
-    document.getElementById("col_name").value = data.columns?.name || "Name";
-    document.getElementById("col_phone").value = data.columns?.phone || "Phone";
-    document.getElementById("col_birthday").value = data.columns?.birthday || "Birthday";
     
   } catch (err) {
     console.error("Error loading config:", err);
@@ -262,6 +303,34 @@ function setupActionButtons() {
   const loginBtn = document.getElementById("loginBtn");
   const sendBtn = document.getElementById("sendBtn");
   const deleteBtn = document.getElementById("deleteSessionBtn");
+  const blockerConnectBtn = document.getElementById("blockerConnectBtn");
+  
+  if (blockerConnectBtn) {
+    blockerConnectBtn.addEventListener("click", async () => {
+      const blockerPhoneInput = document.getElementById("blockerPhone");
+      const phone = blockerPhoneInput.value.trim() || "Default";
+      
+      currentSession = phone;
+      
+      try {
+        const res = await fetch("/api/login-whatsapp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_phone: phone })
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+          showToast("WhatsApp Browser Opened. Scan QR Code!");
+          startJobPolling();
+        } else {
+          showToast(data.error || "Failed to start WhatsApp connection", "error");
+        }
+      } catch (err) {
+        showToast("Server connection error", "error");
+      }
+    });
+  }
   
   loginBtn.addEventListener("click", async () => {
     const newSessionInput = document.getElementById("newSessionPhone");
@@ -311,18 +380,15 @@ function setupActionButtons() {
       const res = await fetch("/api/send-wishes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          force: forceSend,
-          session_phone: currentSession
-        })
+        body: JSON.stringify({ session_phone: currentSession, force: forceSend })
       });
       const data = await res.json();
       
       if (res.ok) {
-        showToast("Wishing process initiated!");
+        showToast("Birthday wishing automation job started!");
         startJobPolling();
       } else {
-        showToast(data.error || "Failed to start sending", "error");
+        showToast(data.error || "Failed to start sending job", "error");
       }
     } catch (err) {
       showToast("Server communication error", "error");
@@ -379,8 +445,11 @@ function startJobPolling() {
         setActionsDisabled(false);
         showToast("Process completed.");
         
-        // Hide QR Code Container on completion
-        document.getElementById("qrCodeContainer").style.display = "none";
+        // Hide QR Code Containers on completion
+        const qrContainer = document.getElementById("qrCodeContainer");
+        const blockerQrContainer = document.getElementById("blockerQrCodeContainer");
+        if (qrContainer) qrContainer.style.display = "none";
+        if (blockerQrContainer) blockerQrContainer.style.display = "none";
         
         // Reload all data
         loadSessions().then(() => {
@@ -397,20 +466,32 @@ function startJobPolling() {
           try {
             const qrRes = await fetch(`/api/qr-status?session=${currentSession}`);
             const qrData = await qrRes.json();
+            
             const qrContainer = document.getElementById("qrCodeContainer");
             const qrImg = document.getElementById("qrCodeImg");
             
+            const blockerQrContainer = document.getElementById("blockerQrCodeContainer");
+            const blockerQrImg = document.getElementById("blockerQrImage");
+            
             if (qrData.qr_available) {
-              qrImg.src = qrData.qr_url;
-              qrContainer.style.display = "block";
+              if (qrImg) qrImg.src = qrData.qr_url;
+              if (qrContainer) qrContainer.style.display = "block";
+              
+              if (blockerQrImg) blockerQrImg.src = qrData.qr_url;
+              if (blockerQrContainer) blockerQrContainer.style.display = "block";
             } else {
-              qrContainer.style.display = "none";
+              if (qrContainer) qrContainer.style.display = "none";
+              if (blockerQrContainer) blockerQrContainer.style.display = "none";
             }
           } catch (qrErr) {
             console.error("Error polling QR code:", qrErr);
           }
         } else if (job.status === "running_send") {
-          document.getElementById("qrCodeContainer").style.display = "none"; // Ensure QR is hidden
+          const qrContainer = document.getElementById("qrCodeContainer");
+          const blockerQrContainer = document.getElementById("blockerQrCodeContainer");
+          if (qrContainer) qrContainer.style.display = "none";
+          if (blockerQrContainer) blockerQrContainer.style.display = "none";
+          
           const countStr = job.total_count ? `(${job.success_count + job.failed_count}/${job.total_count})` : "";
           document.getElementById("sendBtn").innerHTML = `<span class="spinner"></span> Sending ${countStr}...`;
         }
@@ -529,11 +610,12 @@ async function loadSessions() {
   }
 }
 
-// Setup Today/Tomorrow/Month toggles
+// Setup Today/Tomorrow/Month/All toggles
 function setupTabs() {
   const tabToday = document.getElementById("tabToday");
   const tabTomorrow = document.getElementById("tabTomorrow");
   const tabMonth = document.getElementById("tabMonth");
+  const tabAll = document.getElementById("tabAll");
   const monthSelector = document.getElementById("monthSelectorContainer");
   const monthSelect = document.getElementById("monthSelect");
   
@@ -547,12 +629,13 @@ function setupTabs() {
     });
   }
   
-  if (tabToday && tabTomorrow && tabMonth) {
+  if (tabToday && tabTomorrow && tabMonth && tabAll) {
     tabToday.addEventListener("click", () => {
       activeTab = "today";
       tabToday.classList.add("active");
       tabTomorrow.classList.remove("active");
       tabMonth.classList.remove("active");
+      tabAll.classList.remove("active");
       if (monthSelector) monthSelector.style.display = "none";
       loadBirthdays();
     });
@@ -562,6 +645,7 @@ function setupTabs() {
       tabTomorrow.classList.add("active");
       tabToday.classList.remove("active");
       tabMonth.classList.remove("active");
+      tabAll.classList.remove("active");
       if (monthSelector) monthSelector.style.display = "none";
       loadBirthdays();
     });
@@ -571,7 +655,18 @@ function setupTabs() {
       tabMonth.classList.add("active");
       tabToday.classList.remove("active");
       tabTomorrow.classList.remove("active");
+      tabAll.classList.remove("active");
       if (monthSelector) monthSelector.style.display = "flex";
+      loadBirthdays();
+    });
+    
+    tabAll.addEventListener("click", () => {
+      activeTab = "all";
+      tabAll.classList.add("active");
+      tabToday.classList.remove("active");
+      tabTomorrow.classList.remove("active");
+      tabMonth.classList.remove("active");
+      if (monthSelector) monthSelector.style.display = "none";
       loadBirthdays();
     });
   }

@@ -11,7 +11,34 @@
   <!-- Toast Notification Container -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- Header -->
+  <!-- WhatsApp Connection Blocker Overlay -->
+  <div id="connectionBlocker" style="display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 40px); padding: 2rem; box-sizing: border-box;">
+    <div class="blocker-card" style="max-width: 500px; width: 100%; text-align: center; padding: 3rem; background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 16px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);">
+      <span class="blocker-logo" style="font-size: 4rem; display: block; margin-bottom: 1rem; filter: drop-shadow(0 2px 8px rgba(99, 102, 241, 0.4));">🔑</span>
+      <h2 style="font-size: 1.75rem; font-weight: 700; color: #fff; margin-bottom: 0.75rem;">WhatsApp Connection Required</h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.6; margin-bottom: 2rem;">Please connect your WhatsApp account first. Once linked, the dashboard will automatically unlock for Excel uploads and birthday wishing automation.</p>
+      
+      <div style="text-align: left; margin-bottom: 1.5rem;">
+        <label for="blockerPhone" style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.5rem;">Enter Mobile Number (Optional)</label>
+        <input type="text" id="blockerPhone" placeholder="Default Account" style="width: 100%; padding: 0.75rem; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--glass-border); border-radius: 8px; color: #fff; font-family: inherit; font-size: 0.95rem; outline: none; transition: var(--transition); box-sizing: border-box;">
+      </div>
+      
+      <button id="blockerConnectBtn" class="btn" style="width: 100%; font-size: 1rem; padding: 0.85rem; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;">⚡ Connect WhatsApp</button>
+
+      <!-- Streaming QR Code Container inside Blocker -->
+      <div id="blockerQrCodeContainer" class="qr-container" style="display: none; margin-top: 2rem; border-top: 1px solid var(--glass-border); padding-top: 1.5rem; text-align: center;">
+        <h3 style="font-size: 1.1rem; color: #fff; margin-bottom: 0.25rem;">Scan this QR Code</h3>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Open WhatsApp -> Linked Devices -> Link a Device.</p>
+        <div class="qr-canvas" style="display: inline-block; position: relative; background: #fff; padding: 12px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+          <img id="blockerQrImage" src="" alt="Scan QR Code" style="display: block; max-width: 220px; height: auto;">
+          <div id="blockerQrSpinner" class="qr-spinner"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="dashboardApp" style="display: none;">
+    <!-- Header -->
   <header>
     <div class="logo-container">
       <span class="logo-icon">🎂</span>
@@ -64,6 +91,7 @@
             <button id="tabToday" class="tab-btn active" style="background: none; border: none; color: #fff; font-weight: 600; font-size: 0.85rem; cursor: pointer; padding: 0.4rem 1rem; border-radius: 0.35rem; transition: var(--transition);">Today</button>
             <button id="tabTomorrow" class="tab-btn" style="background: none; border: none; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; cursor: pointer; padding: 0.4rem 1rem; border-radius: 0.35rem; transition: var(--transition);">Tomorrow</button>
             <button id="tabMonth" class="tab-btn" style="background: none; border: none; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; cursor: pointer; padding: 0.4rem 1rem; border-radius: 0.35rem; transition: var(--transition);">By Month</button>
+            <button id="tabAll" class="tab-btn" style="background: none; border: none; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; cursor: pointer; padding: 0.4rem 1rem; border-radius: 0.35rem; transition: var(--transition);">All Students</button>
           </div>
         </div>
         
@@ -228,15 +256,15 @@
             <div class="config-row-grid">
               <div>
                 <label style="font-size: 0.75rem;" for="col_name">Name</label>
-                <input type="text" id="col_name" required>
+                <select id="col_name" style="background-color: rgba(0, 0, 0, 0.3); border: 1px solid var(--glass-border); color: #fff; padding: 0.5rem; border-radius: 0.5rem; font-family: inherit; font-size: 0.85rem; width: 100%; outline: none; cursor: pointer; box-sizing: border-box;"></select>
               </div>
               <div>
                 <label style="font-size: 0.75rem;" for="col_phone">Phone</label>
-                <input type="text" id="col_phone" required>
+                <select id="col_phone" style="background-color: rgba(0, 0, 0, 0.3); border: 1px solid var(--glass-border); color: #fff; padding: 0.5rem; border-radius: 0.5rem; font-family: inherit; font-size: 0.85rem; width: 100%; outline: none; cursor: pointer; box-sizing: border-box;"></select>
               </div>
               <div>
                 <label style="font-size: 0.75rem;" for="col_birthday">Birthday</label>
-                <input type="text" id="col_birthday" required>
+                <select id="col_birthday" style="background-color: rgba(0, 0, 0, 0.3); border: 1px solid var(--glass-border); color: #fff; padding: 0.5rem; border-radius: 0.5rem; font-family: inherit; font-size: 0.85rem; width: 100%; outline: none; cursor: pointer; box-sizing: border-box;"></select>
               </div>
             </div>
           </div>
@@ -281,6 +309,7 @@
   <footer>
     <p>WhatsApp Birthday Automation Dashboard &copy; 2026. Localhost application.</p>
   </footer>
+</div> <!-- end #dashboardApp -->
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
