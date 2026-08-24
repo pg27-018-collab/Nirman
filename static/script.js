@@ -2,6 +2,7 @@
 
 let statusPollInterval = null;
 let currentSession = "Default";
+let activeTab = "today";
 
 document.addEventListener("DOMContentLoaded", () => {
   // Initial Loads
@@ -16,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupUploader();
   setupConfigForm();
   setupActionButtons();
+  setupTabs();
   
   // Start general status polling (every 10 seconds)
   setInterval(loadStatus, 10000);
@@ -60,6 +62,7 @@ async function loadStatus() {
     // Stats Cards
     document.getElementById("statTotalStudents").innerText = data.total_students;
     document.getElementById("statBirthdaysToday").innerText = data.birthdays_count;
+    document.getElementById("statBirthdaysTomorrow").innerText = data.birthdays_tomorrow_count;
     document.getElementById("statSentToday").innerText = data.sent_today_count;
     document.getElementById("statPending").innerText = data.pending_count;
     
@@ -89,14 +92,15 @@ async function loadStatus() {
 // Load Birthdays Table
 async function loadBirthdays() {
   try {
-    const res = await fetch(`/api/birthdays?session=${currentSession}`);
+    const res = await fetch(`/api/birthdays?session=${currentSession}&day=${activeTab}`);
     const data = await res.json();
     
     const tbody = document.getElementById("birthdayTableBody");
     tbody.innerHTML = "";
     
     if (data.birthdays.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">🎉 No birthdays found for today!</td></tr>`;
+      const dayText = activeTab === "tomorrow" ? "tomorrow" : "today";
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">🎉 No birthdays found for ${dayText}!</td></tr>`;
       return;
     }
     
@@ -111,6 +115,9 @@ async function loadBirthdays() {
       } else if (b.status === "failed") {
         statusClass = "failed";
         statusText = "Failed";
+      } else if (b.status === "upcoming") {
+        statusClass = "upcoming";
+        statusText = "Upcoming";
       }
       
       tr.innerHTML = `
@@ -508,5 +515,27 @@ async function loadSessions() {
     select.value = currentSession;
   } catch (err) {
     console.error("Error loading sessions:", err);
+  }
+}
+
+// Setup Today/Tomorrow toggles
+function setupTabs() {
+  const tabToday = document.getElementById("tabToday");
+  const tabTomorrow = document.getElementById("tabTomorrow");
+  
+  if (tabToday && tabTomorrow) {
+    tabToday.addEventListener("click", () => {
+      activeTab = "today";
+      tabToday.classList.add("active");
+      tabTomorrow.classList.remove("active");
+      loadBirthdays();
+    });
+    
+    tabTomorrow.addEventListener("click", () => {
+      activeTab = "tomorrow";
+      tabTomorrow.classList.add("active");
+      tabToday.classList.remove("active");
+      loadBirthdays();
+    });
   }
 }

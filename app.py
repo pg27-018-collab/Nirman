@@ -4,7 +4,7 @@ import json
 import time
 import random
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request, send_from_directory
 import pandas as pd
 from whatsapp_bot import WhatsAppBot
@@ -358,32 +358,52 @@ def get_status():
     
     total_students = 0
     birthdays_count = 0
+    birthdays_tomorrow_count = 0
     sent_today_count = 0
     
-    # Read info if excel exists
     if excel_exists:
         try:
             df = pd.read_excel(excel_path)
             total_students = len(df)
             
-            # Count today's birthdays
-            cols = config.get("columns", {})
-            bday_col = cols.get("birthday", "Birthday")
-            phone_col = cols.get("phone", "Phone")
+            name_col = config.get("columns", {}).get("name", "Name")
+            phone_col = config.get("columns", {}).get("phone", "Phone")
+            bday_col = config.get("columns", {}).get("birthday", "Birthday")
             
-            if bday_col in df.columns:
-                today = datetime.now()
-                for idx, val in df[bday_col].items():
-                    parsed = core_main.parse_birthday(val)
-                    if parsed and parsed[0] == today.month and parsed[1] == today.day:
-                        birthdays_count += 1
-                        
-                        # Check if sent
-                        history = core_main.load_history()
-                        today_str = today.strftime("%Y-%m-%d")
-                        cleaned_p = core_main.clean_phone(df.iloc[idx].get(phone_col), config.get("default_country_code", "+91"))
-                        if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today_str):
-                            sent_today_count += 1
+            # Find matching birthdays
+            today = datetime.now()
+            tomorrow = today + timedelta(days=1)
+            
+            for idx, row in df.iterrows():
+                dob_val = row.get(bday_col)
+                if pd.notna(dob_val):
+                    dob = None
+                    if isinstance(dob_val, datetime):
+                        dob = dob_val
+                    else:
+                        # Try parsing string
+                        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"):
+                            try:
+                                dob = datetime.strptime(str(dob_val).strip(), fmt)
+                                break
+                            except:
+                                pass
+                                
+                    if dob:
+                        # Check if today is birthday
+                        if dob.month == today.month and dob.day == today.day:
+                            birthdays_count += 1
+                            
+                            # Check if sent
+                            history = core_main.load_history()
+                            today_str = today.strftime("%Y-%m-%d")
+                            cleaned_p = core_main.clean_phone(df.iloc[idx].get(phone_col), config.get("default_country_code", "+91"))
+                            if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today_str):
+                                sent_today_count += 1
+                                
+                        # Check if tomorrow is birthday
+                        if dob.month == tomorrow.month and dob.day == tomorrow.day:
+                            birthdays_tomorrow_count += 1
         except Exception as e:
             print(f"Error loading stats: {str(e)}")
             
@@ -393,6 +413,7 @@ def get_status():
         "whatsapp_authenticated": check_session_exists(session_phone),
         "total_students": total_students,
         "birthdays_count": birthdays_count,
+        "birthdays_tomorrow_count": birthdays_tomorrow_count,
         "sent_today_count": sent_today_count,
         "pending_count": max(0, birthdays_count - sent_today_count)
     })
@@ -402,6 +423,7 @@ def get_birthdays():
     config = load_config()
     excel_path = config.get("excel_path", "students.xlsx")
     session_phone = request.args.get("session", "Default")
+    day_param = request.args.get("day", "today").lower()
     
     if not os.path.exists(excel_path):
         return jsonify({"date": datetime.now().strftime("%Y-%m-%d"), "birthdays": []})
@@ -409,51 +431,74 @@ def get_birthdays():
     birthdays = []
     try:
         df = pd.read_excel(excel_path)
-        cols = config.get("columns", {})
-        name_col = cols.get("name", "Name")
-        phone_col = cols.get("phone", "Phone")
-        bday_col = cols.get("birthday", "Birthday")
+        
+        name_col = config.get("columns", {}).get("name", "Name")
+        phone_col = config.get("columns", {}).get("phone", "Phone")
+        bday_col = config.get("columns", {}).get("birthday", "Birthday")
         
         today = datetime.now()
+        
+        # Calculate target date based on tab parameter
+        if day_param == "tomorrow":
+            target_date = today + timedelta(days=1)
+        else:
+            target_date = today
+            
+        target_date_str = target_date.strftime("%Y-%m-%d")
         history = core_main.load_history()
-        today_str = today.strftime("%Y-%m-%d")
         
         for idx, row in df.iterrows():
             name = row.get(name_col)
             phone = row.get(phone_col)
-            bday = row.get(bday_col)
+            dob_val = row.get(bday_col)
             
-            if pd.isna(name) or pd.isna(bday):
-                continue
-                
-            parsed = core_main.parse_birthday(bday)
-            if parsed and parsed[0] == today.month and parsed[1] == today.day:
-                cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
-                
-                status = "pending"
-                if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today_str):
-                    # Check status in history
-                    records = history.get("sent_records", [])
-                    record = next((r for r in records if r["date"] == today_str and r["phone"] == cleaned_p), None)
-                    if record and record["status"] == "invalid_number":
-                        status = "failed"
-                    else:
-                        status = "sent"
+            if pd.notna(name) and pd.notna(dob_val):
+                dob = None
+                if isinstance(dob_val, datetime):
+                    dob = dob_val
+                else:
+                    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"):
+                        try:
+                            dob = datetime.strptime(str(dob_val).strip(), fmt)
+                            break
+                        except:
+                            pass
+                            
+                if not dob:
+                    continue
                     
-                birthdays.append({
-                    "name": str(name).strip(),
-                    "phone": cleaned_p or str(phone),
-                    "birthday": str(bday).strip(),
-                    "status": status,
-                    "row": idx + 2
-                })
+                # Match target date month & day
+                if dob.month == target_date.month and dob.day == target_date.day:
+                    cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
+                    
+                    if day_param == "tomorrow":
+                        status = "upcoming"
+                    else:
+                        status = "pending"
+                        if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, target_date_str):
+                            # Check status in history
+                            records = history.get("sent_records", [])
+                            record = next((r for r in records if r["date"] == target_date_str and r["phone"] == cleaned_p), None)
+                            if record and record["status"] == "invalid_number":
+                                status = "failed"
+                            else:
+                                status = "sent"
+                        
+                    birthdays.append({
+                        "name": str(name).strip(),
+                        "phone": str(phone).strip() if pd.notna(phone) else "",
+                        "birthday": str(dob_val).split(" ")[0],
+                        "status": status,
+                        "row": idx + 2  # Excel is 1-based, plus header row
+                    })
+                    
+        return jsonify({
+            "date": target_date_str,
+            "birthdays": birthdays
+        })
     except Exception as e:
         print(f"Error loading birthdays: {str(e)}")
-        
-    return jsonify({
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "birthdays": birthdays
-    })
+        return jsonify({"error": f"Failed to load birthdays: {str(e)}", "birthdays": []}), 500
 
 @app.route("/api/config", methods=["GET", "POST"])
 def manage_configuration():

@@ -261,6 +261,21 @@ tr:hover td {
   color: var(--text-critical);
 }
 
+.status-indicator.upcoming {
+  background-color: rgba(252, 211, 77, 0.15);
+  color: #fcd34d;
+}
+
+.tab-btn.active {
+  background-color: var(--primary) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.tab-btn:hover {
+  color: #fff !important;
+}
+
 /* Forms & Inputs */
 .form-group {
   margin-bottom: 1.25rem;

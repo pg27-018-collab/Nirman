@@ -42,6 +42,10 @@
           <div class="stat-label">Birthdays Today</div>
         </div>
         <div class="stat-card">
+          <div class="stat-value" id="statBirthdaysTomorrow" style="color: #fcd34d;">-</div>
+          <div class="stat-label">Birthdays Tomorrow</div>
+        </div>
+        <div class="stat-card">
           <div class="stat-value" id="statSentToday" style="color: var(--text-success);">-</div>
           <div class="stat-label">Sent Wishes</div>
         </div>
@@ -53,7 +57,14 @@
 
       <!-- Birthdays List Card -->
       <div class="card">
-        <h2 class="card-title">📅 Today's Birthdays</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); margin-bottom: 1.25rem; padding-bottom: 0.75rem;">
+          <h2 class="card-title" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">📅 Birthdays Directory</h2>
+          
+          <div style="display: flex; gap: 0.5rem; background: rgba(0, 0, 0, 0.2); padding: 0.25rem; border-radius: 0.5rem; border: 1px solid var(--glass-border);">
+            <button id="tabToday" class="tab-btn active" style="background: none; border: none; color: #fff; font-weight: 600; font-size: 0.85rem; cursor: pointer; padding: 0.4rem 1rem; border-radius: 0.35rem; transition: var(--transition);">Today</button>
+            <button id="tabTomorrow" class="tab-btn" style="background: none; border: none; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; cursor: pointer; padding: 0.4rem 1rem; border-radius: 0.35rem; transition: var(--transition);">Tomorrow</button>
+          </div>
+        </div>
         <div class="table-container">
           <table>
             <thead>
