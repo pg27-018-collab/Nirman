@@ -99,7 +99,7 @@ def run_login_thread(session_phone="Default"):
             
     add_log(f"Starting browser for profile '{session_phone}'...")
     session_dir = f".session/{session_phone}"
-    bot = WhatsAppBot(user_data_dir=session_dir, headless=False)
+    bot = WhatsAppBot(user_data_dir=session_dir, headless=True)
     try:
         bot.start()
         add_log("Browser launched. Checking login status (waiting for QR code if not logged in)...")
@@ -272,7 +272,7 @@ def run_send_thread(session_phone="Default", force_send=False):
         
     # Start bot
     session_dir = f".session/{session_phone}"
-    bot = WhatsAppBot(user_data_dir=session_dir, headless=False)
+    bot = WhatsAppBot(user_data_dir=session_dir, headless=True)
     try:
         bot.start()
         add_log(f"Checking authentication for profile '{session_phone}'...")
@@ -425,34 +425,23 @@ def get_status():
             
             for idx, row in df.iterrows():
                 dob_val = row.get(bday_col)
-                if pd.notna(dob_val):
-                    dob = None
-                    if isinstance(dob_val, datetime):
-                        dob = dob_val
-                    else:
-                        # Try parsing string
-                        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"):
-                            try:
-                                dob = datetime.strptime(str(dob_val).strip(), fmt)
-                                break
-                            except:
-                                pass
-                                
-                    if dob:
-                        # Check if today is birthday
-                        if dob.month == today.month and dob.day == today.day:
-                            birthdays_count += 1
+                parsed_dob = core_main.parse_birthday(dob_val)
+                if parsed_dob:
+                    dob_month, dob_day = parsed_dob
+                    # Check if today is birthday
+                    if dob_month == today.month and dob_day == today.day:
+                        birthdays_count += 1
+                        
+                        # Check if sent
+                        history = core_main.load_history()
+                        today_str = today.strftime("%Y-%m-%d")
+                        cleaned_p = core_main.clean_phone(df.iloc[idx].get(phone_col), config.get("default_country_code", "+91"))
+                        if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today_str):
+                            sent_today_count += 1
                             
-                            # Check if sent
-                            history = core_main.load_history()
-                            today_str = today.strftime("%Y-%m-%d")
-                            cleaned_p = core_main.clean_phone(df.iloc[idx].get(phone_col), config.get("default_country_code", "+91"))
-                            if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today_str):
-                                sent_today_count += 1
-                                
-                        # Check if tomorrow is birthday
-                        if dob.month == tomorrow.month and dob.day == tomorrow.day:
-                            birthdays_tomorrow_count += 1
+                    # Check if tomorrow is birthday
+                    if dob_month == tomorrow.month and dob_day == tomorrow.day:
+                        birthdays_tomorrow_count += 1
         except Exception as e:
             print(f"Error loading stats: {str(e)}")
             
@@ -504,20 +493,11 @@ def get_birthdays():
             dob_val = row.get(bday_col)
             
             if pd.notna(name) and pd.notna(dob_val):
-                dob = None
-                if isinstance(dob_val, datetime):
-                    dob = dob_val
-                else:
-                    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d"):
-                        try:
-                            dob = datetime.strptime(str(dob_val).strip(), fmt)
-                            break
-                        except:
-                            pass
-                            
-                if not dob:
+                parsed_dob = core_main.parse_birthday(dob_val)
+                if not parsed_dob:
                     continue
-                    
+                dob_month, dob_day = parsed_dob
+                
                 match = False
                 status = "pending"
                 
@@ -526,7 +506,7 @@ def get_birthdays():
                     match = True
                     # Determine status (passed, today, upcoming)
                     try:
-                        bday_this_year = datetime(today.year, dob.month, dob.day)
+                        bday_this_year = datetime(today.year, dob_month, dob_day)
                     except ValueError:
                         bday_this_year = datetime(today.year, 3, 1)
                         
@@ -548,10 +528,10 @@ def get_birthdays():
                     else:
                         status = "upcoming"
                 elif day_param == "month":
-                    if dob.month == month_val:
+                    if dob_month == month_val:
                         match = True
                         try:
-                            bday_this_year = datetime(today.year, dob.month, dob.day)
+                            bday_this_year = datetime(today.year, dob_month, dob_day)
                         except ValueError:
                             bday_this_year = datetime(today.year, 3, 1)
                             
@@ -573,7 +553,7 @@ def get_birthdays():
                         else:
                             status = "upcoming"
                 else:
-                    if dob.month == target_date.month and dob.day == target_date.day:
+                    if dob_month == target_date.month and dob_day == target_date.day:
                         match = True
                         cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
                         
@@ -590,13 +570,17 @@ def get_birthdays():
                                     status = "sent"
                                     
                 if match:
+                    # Beautiful standardized display birthday string
+                    month_name = datetime(2000, dob_month, 1).strftime('%B')
+                    display_bday = f"{dob_day:02d} {month_name}"
+                    
                     birthdays.append({
                         "name": str(name).strip(),
                         "phone": str(phone).strip() if pd.notna(phone) else "",
-                        "birthday": str(dob_val).split(" ")[0],
+                        "birthday": display_bday,
                         "status": status,
-                        "month_num": dob.month,
-                        "day_of_month": dob.day,
+                        "month_num": dob_month,
+                        "day_of_month": dob_day,
                         "row": idx + 2  # Excel is 1-based, plus header row
                     })
                     

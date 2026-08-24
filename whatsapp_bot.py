@@ -6,7 +6,7 @@ import urllib.parse
 from playwright.sync_api import sync_playwright
 
 class WhatsAppBot:
-    def __init__(self, user_data_dir=".session", headless=False):
+    def __init__(self, user_data_dir=".session", headless=True):
         self.user_data_dir = os.path.abspath(user_data_dir)
         self.headless = headless
         self.playwright = None

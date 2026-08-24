@@ -3,6 +3,10 @@
 let statusPollInterval = null;
 let currentSession = "Default";
 let activeTab = "today";
+let birthdayRecords = [];
+let filteredRecords = [];
+let currentPage = 1;
+let pageSize = 15;
 
 document.addEventListener("DOMContentLoaded", () => {
   // Initial Loads
@@ -18,6 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupConfigForm();
   setupActionButtons();
   setupTabs();
+  setupTableControls();
   
   // Start general status polling (every 10 seconds)
   setInterval(loadStatus, 10000);
@@ -139,52 +144,9 @@ async function loadBirthdays() {
     const res = await fetch(`/api/birthdays?session=${currentSession}&day=${activeTab}&month=${selectedMonth}`);
     const data = await res.json();
     
-    const tbody = document.getElementById("birthdayTableBody");
-    tbody.innerHTML = "";
-    
-    if (data.birthdays.length === 0) {
-      let dayText = "today";
-      if (activeTab === "tomorrow") {
-        dayText = "tomorrow";
-      } else if (activeTab === "month") {
-        const monthSelect = document.getElementById("monthSelect");
-        const monthName = monthSelect ? monthSelect.options[monthSelect.selectedIndex].text : "this month";
-        dayText = monthName;
-      } else if (activeTab === "all") {
-        dayText = "all directory records";
-      }
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">🎉 No birthdays found for ${dayText}!</td></tr>`;
-      return;
-    }
-    
-    data.birthdays.forEach(b => {
-      const tr = document.createElement("tr");
-      
-      let statusClass = "pending";
-      let statusText = "Pending";
-      if (b.status === "sent") {
-        statusClass = "sent";
-        statusText = "Sent";
-      } else if (b.status === "failed") {
-        statusClass = "failed";
-        statusText = "Failed";
-      } else if (b.status === "upcoming") {
-        statusClass = "upcoming";
-        statusText = "Upcoming";
-      } else if (b.status === "passed") {
-        statusClass = "passed";
-        statusText = "Passed";
-      }
-      
-      tr.innerHTML = `
-        <td class="user-cell">${b.name}</td>
-        <td>${b.phone}</td>
-        <td>${b.birthday}</td>
-        <td><span class="status-indicator ${statusClass}">${statusText}</span></td>
-        <td>Row ${b.row}</td>
-      `;
-      tbody.appendChild(tr);
-    });
+    birthdayRecords = data.birthdays || [];
+    currentPage = 1;
+    applyTableFilterAndRender();
     
   } catch (err) {
     console.error("Error loading birthdays:", err);
@@ -668,6 +630,144 @@ function setupTabs() {
       tabMonth.classList.remove("active");
       if (monthSelector) monthSelector.style.display = "none";
       loadBirthdays();
+    });
+  }
+}
+
+// Filter birthday table records client-side and render current page slice
+function applyTableFilterAndRender() {
+  const tbody = document.getElementById("birthdayTableBody");
+  if (!tbody) return;
+  
+  tbody.innerHTML = "";
+  
+  const queryInput = document.getElementById("tableSearchInput");
+  const query = queryInput ? queryInput.value.trim().toLowerCase() : "";
+  
+  filteredRecords = birthdayRecords.filter(b => {
+    return (b.name || "").toLowerCase().includes(query) || 
+           (b.phone || "").toLowerCase().includes(query) || 
+           String(b.row || "").includes(query) ||
+           (b.birthday || "").toLowerCase().includes(query) ||
+           (b.status || "").toLowerCase().includes(query);
+  });
+  
+  const totalRecords = filteredRecords.length;
+  
+  if (totalRecords === 0) {
+    let dayText = "today";
+    if (activeTab === "tomorrow") {
+      dayText = "tomorrow";
+    } else if (activeTab === "month") {
+      const monthSelect = document.getElementById("monthSelect");
+      const monthName = monthSelect ? monthSelect.options[monthSelect.selectedIndex].text : "this month";
+      dayText = monthName;
+    } else if (activeTab === "all") {
+      dayText = "all directory records";
+    }
+    
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">🎉 No birthdays found for ${dayText}!</td></tr>`;
+    
+    // Update pagination controls to disabled/empty state
+    const infoText = document.getElementById("tableInfoText");
+    if (infoText) infoText.innerText = "Showing 0 to 0 of 0 students";
+    
+    const prevBtn = document.getElementById("prevPageBtn");
+    const nextBtn = document.getElementById("nextPageBtn");
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+    return;
+  }
+  
+  // Calculate paging indexes
+  const maxPage = Math.ceil(totalRecords / pageSize);
+  if (currentPage > maxPage) currentPage = maxPage;
+  if (currentPage < 1) currentPage = 1;
+  
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalRecords);
+  
+  const pageSlice = filteredRecords.slice(startIndex, endIndex);
+  
+  pageSlice.forEach(b => {
+    const tr = document.createElement("tr");
+    
+    let statusClass = "pending";
+    let statusText = "Pending";
+    if (b.status === "sent") {
+      statusClass = "sent";
+      statusText = "Sent";
+    } else if (b.status === "failed") {
+      statusClass = "failed";
+      statusText = "Failed";
+    } else if (b.status === "upcoming") {
+      statusClass = "upcoming";
+      statusText = "Upcoming";
+    } else if (b.status === "passed") {
+      statusClass = "passed";
+      statusText = "Passed";
+    }
+    
+    tr.innerHTML = `
+      <td class="user-cell">${b.name}</td>
+      <td>${b.phone}</td>
+      <td>${b.birthday}</td>
+      <td><span class="status-indicator ${statusClass}">${statusText}</span></td>
+      <td>Row ${b.row}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  
+  // Update Info Text and buttons
+  const infoText = document.getElementById("tableInfoText");
+  if (infoText) {
+    infoText.innerText = `Showing ${startIndex + 1} to ${endIndex} of ${totalRecords} student(s)`;
+  }
+  
+  const prevBtn = document.getElementById("prevPageBtn");
+  const nextBtn = document.getElementById("nextPageBtn");
+  
+  if (prevBtn) prevBtn.disabled = (currentPage === 1);
+  if (nextBtn) nextBtn.disabled = (endIndex >= totalRecords);
+}
+
+// Bind listeners for search and paging controls
+function setupTableControls() {
+  const searchInput = document.getElementById("tableSearchInput");
+  const pageSizeSelect = document.getElementById("pageSizeSelect");
+  const prevBtn = document.getElementById("prevPageBtn");
+  const nextBtn = document.getElementById("nextPageBtn");
+  
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      currentPage = 1;
+      applyTableFilterAndRender();
+    });
+  }
+  
+  if (pageSizeSelect) {
+    pageSizeSelect.addEventListener("change", (e) => {
+      pageSize = parseInt(e.target.value);
+      currentPage = 1;
+      applyTableFilterAndRender();
+    });
+  }
+  
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (currentPage > 1) {
+        currentPage--;
+        applyTableFilterAndRender();
+      }
+    });
+  }
+  
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if ((currentPage * pageSize) < filteredRecords.length) {
+        currentPage++;
+        applyTableFilterAndRender();
+      }
     });
   }
 }

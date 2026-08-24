@@ -126,6 +126,24 @@ def parse_birthday(val):
     if hasattr(val, 'month') and hasattr(val, 'day'):
         return int(val.month), int(val.day)
         
+    # Try parsing numeric serial date (e.g. Excel serial number)
+    try:
+        num_val = None
+        if isinstance(val, (int, float)):
+            num_val = float(val)
+        else:
+            s_val = str(val).strip()
+            if s_val.endswith('.0'):
+                s_val = s_val[:-2]
+            if s_val.isdigit():
+                num_val = float(s_val)
+                
+        if num_val is not None and 1 < num_val < 100000:
+            dt = pd.to_datetime(num_val, unit='D', origin='1899-12-30')
+            return int(dt.month), int(dt.day)
+    except:
+        pass
+        
     # If it's a string, attempt various formats
     val_str = str(val).strip()
     if not val_str:
@@ -143,6 +161,9 @@ def parse_birthday(val):
         "%d-%b-%Y",  # 24-Aug-2002
         "%d-%b",     # 24-Aug
         "%b-%d",     # Aug-24
+        "%Y/%m/%d",  # 2002/08/24
+        "%d/%m/%Y",  # 24/08/2002
+        "%m/%d/%Y",  # 08/24/2002
     ]
     
     for fmt in formats:

@@ -113,6 +113,20 @@
             <option value="12">December</option>
           </select>
         </div>
+        <!-- Search and Page Size controls -->
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: 0 0.25rem; flex-wrap: wrap;">
+          <input type="text" id="tableSearchInput" placeholder="🔍 Search by name, phone or row number..." style="background: rgba(0, 0, 0, 0.2); border: 1px solid var(--glass-border); color: #fff; padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-family: inherit; font-size: 0.85rem; outline: none; width: 280px; transition: var(--transition);">
+          
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 0.85rem; color: var(--text-muted);">Rows per page:</span>
+            <select id="pageSizeSelect" style="background-color: rgba(0, 0, 0, 0.3); border: 1px solid var(--glass-border); color: #fff; padding: 0.4rem 0.75rem; border-radius: 0.5rem; font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer; width: auto;">
+              <option value="15">15</option>
+              <option value="30">30</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+        </div>
         
         <div class="table-container">
           <table>
@@ -133,6 +147,16 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid var(--glass-border); margin-top: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div id="tableInfoText" style="font-size: 0.85rem; color: var(--text-muted);">Showing 0 to 0 of 0 students</div>
+          
+          <div style="display: flex; gap: 0.25rem;">
+            <button id="prevPageBtn" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem; border-radius: 0.35rem; font-weight: 500;">◀ Previous</button>
+            <button id="nextPageBtn" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem; border-radius: 0.35rem; font-weight: 500;">Next ▶</button>
+          </div>
         </div>
       </div>
 
