@@ -187,16 +187,16 @@ def run_send_thread(force_send=False):
             job_status["status"] = "idle"
         return
         
-    today_sent = history.get(today_str, [])
     pending_birthdays = []
     for b in birthdays_today:
-        if not force_send and b["phone"] in today_sent:
+        if not force_send and core_main.is_already_sent_today(history, b["phone"], today_str):
             add_log(f"ℹ️ Already messaged today: {b['name']} ({b['phone']}). Skipping.")
         else:
             pending_birthdays.append(b)
             
     if not pending_birthdays:
         add_log("✅ All birthday wishes for today have already been sent!")
+        core_main.send_macos_notification("Birthday Automation", "✅ All birthday wishes for today have already been sent!")
         with job_lock:
             job_status["status"] = "idle"
         return
@@ -231,9 +231,6 @@ def run_send_thread(force_send=False):
             
         add_log("✅ Authenticated. Starting wishing sequence...")
         
-        if today_str not in history:
-            history[today_str] = []
-            
         for i, student in enumerate(pending_birthdays):
             name = student["name"]
             phone = student["phone"]
@@ -244,14 +241,12 @@ def run_send_thread(force_send=False):
             
             if result == "success":
                 add_log(f"✅ Sent successfully to {name}!")
-                history[today_str].append(phone)
-                core_main.save_history(history)
+                core_main.add_history_record(history, name, phone, "success")
                 with job_lock:
                     job_status["success_count"] += 1
             elif result == "invalid_number":
                 add_log(f"❌ Failed: Phone number {phone} is not registered on WhatsApp.")
-                history[today_str].append(phone)
-                core_main.save_history(history)
+                core_main.add_history_record(history, name, phone, "invalid_number")
                 with job_lock:
                     job_status["failed_count"] += 1
             else:
@@ -265,6 +260,14 @@ def run_send_thread(force_send=False):
                 time.sleep(delay)
                 
         add_log("🎉 Wishing sequence completed successfully.")
+        
+        # Trigger macOS notifications
+        success_count = job_status["success_count"]
+        failed_count = job_status["failed_count"]
+        if success_count > 0:
+            core_main.send_macos_notification("Birthday Wishes Sent!", f"✅ Successfully sent wishes to {success_count} student(s).")
+        else:
+            core_main.send_macos_notification("Birthday Wishes Failed", f"❌ Failed to send wishes to {failed_count} student(s).")
         
     except Exception as e:
         add_log(f"❌ Error during sending: {str(e)}")
@@ -311,10 +314,8 @@ def get_status():
                         # Check if sent
                         history = core_main.load_history()
                         today_str = today.strftime("%Y-%m-%d")
-                        today_sent = history.get(today_str, [])
-                        
                         cleaned_p = core_main.clean_phone(df.iloc[idx].get(phone_col), config.get("default_country_code", "+91"))
-                        if cleaned_p and cleaned_p in today_sent:
+                        if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today_str):
                             sent_today_count += 1
         except Exception as e:
             print(f"Error loading stats: {str(e)}")
@@ -348,7 +349,6 @@ def get_birthdays():
         today = datetime.now()
         history = core_main.load_history()
         today_str = today.strftime("%Y-%m-%d")
-        today_sent = history.get(today_str, [])
         
         for idx, row in df.iterrows():
             name = row.get(name_col)
@@ -363,10 +363,14 @@ def get_birthdays():
                 cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
                 
                 status = "pending"
-                if cleaned_p and cleaned_p in today_sent:
-                    # Check if actually successful or marked invalid
-                    # (For simplicity we mark as sent if in today_sent)
-                    status = "sent"
+                if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today_str):
+                    # Check status in history
+                    records = history.get("sent_records", [])
+                    record = next((r for r in records if r["date"] == today_str and r["phone"] == cleaned_p), None)
+                    if record and record["status"] == "invalid_number":
+                        status = "failed"
+                    else:
+                        status = "sent"
                     
                 birthdays.append({
                     "name": str(name).strip(),
@@ -455,7 +459,7 @@ def get_job_status():
 
 @app.route("/api/history")
 def get_history_log():
-    return jsonify(core_main.load_history())
+    return jsonify(core_main.load_history().get("sent_records", []))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8082, debug=True)

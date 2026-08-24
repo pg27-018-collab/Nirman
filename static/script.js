@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Initial Loads
   loadStatus();
   loadBirthdays();
+  loadHistory();
   loadConfig();
   
   // Setup Event Listeners
@@ -226,6 +227,7 @@ async function handleFileUpload(file) {
       showToast(data.message);
       loadStatus();
       loadBirthdays();
+      loadHistory();
     } else {
       showToast(data.error || "Upload failed", "error");
     }
@@ -302,6 +304,7 @@ function startJobPolling() {
         // Reload all data
         loadStatus();
         loadBirthdays();
+        loadHistory();
       } else {
         // Update button text to reflect work
         if (job.status === "running_login") {
@@ -352,4 +355,47 @@ function updateConsoleLogs(logs) {
   
   // Auto scroll
   consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+// Load Sending History Log
+async function loadHistory() {
+  try {
+    const res = await fetch("/api/history");
+    const records = await res.json();
+    
+    const tbody = document.getElementById("historyTableBody");
+    tbody.innerHTML = "";
+    
+    if (records.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No sending records logged yet.</td></tr>`;
+      return;
+    }
+    
+    // Sort records descending by timestamp (newest first)
+    records.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    records.forEach(r => {
+      const tr = document.createElement("tr");
+      
+      let statusClass = "pending";
+      let statusText = "Pending";
+      if (r.status === "success") {
+        statusClass = "sent";
+        statusText = "Success";
+      } else if (r.status === "invalid_number") {
+        statusClass = "failed";
+        statusText = "Invalid Number";
+      }
+      
+      tr.innerHTML = `
+        <td>${r.timestamp}</td>
+        <td class="user-cell">${r.name}</td>
+        <td>${r.phone}</td>
+        <td><span class="status-indicator ${statusClass}">${statusText}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    console.error("Error loading history:", err);
+  }
 }

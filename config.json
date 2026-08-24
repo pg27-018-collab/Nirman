@@ -1,12 +1,12 @@
 {
   "excel_path": "students.xlsx",
   "columns": {
-    "name": "Name",
-    "phone": "Phone",
-    "birthday": "Birthday"
+    "name": "FULL NAME",
+    "phone": "CONTACT NO. - WHATSAPP",
+    "birthday": "DOB"
   },
   "default_country_code": "+91",
-  "message_template": "Happy Birthday, {Name}! 🎉🎂 Wishing you a fantastic year ahead! Hope you have a wonderful day!",
+  "message_template": "Happy Birthday, {Name}! 🎉 Wishing you a wonderful year ahead filled with happiness, success, and new opportunities. It’s always special to look back at the college days and the memories, experiences, and connections that make those years so memorable.\n\nWishing you continued growth and success in everything you do. Hope you have a lovely birthday and a truly memorable year ahead! ✨🎂",
   "min_delay_seconds": 15,
   "max_delay_seconds": 30
 }

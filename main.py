@@ -4,6 +4,7 @@ import json
 import time
 import random
 import argparse
+import subprocess
 from datetime import datetime
 import pandas as pd
 from whatsapp_bot import WhatsAppBot
@@ -23,27 +24,68 @@ def load_history():
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r") as f:
-                return json.load(f)
+                data = json.load(f)
+                if not isinstance(data, dict) or "sent_records" not in data:
+                    data = {"sent_records": []}
+                return data
         except json.JSONDecodeError:
             print("⚠️ Warning: history.json is corrupted. Reinitializing history.")
-            return {}
-    return {}
+            return {"sent_records": []}
+    return {"sent_records": []}
 
 def save_history(history):
     with open(HISTORY_FILE, "w") as f:
         json.dump(history, f, indent=2)
 
+def is_already_sent_today(history, phone, today_str):
+    records = history.get("sent_records", [])
+    return any(r["date"] == today_str and r["phone"] == phone for r in records)
+
+def add_history_record(history, name, phone, status):
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Avoid duplicate records for the same person on the same day
+    records = history.get("sent_records", [])
+    if not any(r["date"] == today_str and r["phone"] == phone and r["status"] == status for r in records):
+        records.append({
+            "date": today_str,
+            "timestamp": timestamp_str,
+            "name": name,
+            "phone": phone,
+            "status": status
+        })
+    history["sent_records"] = records
+    save_history(history)
+
+def send_macos_notification(title, message):
+    try:
+        t_esc = title.replace('"', '\\"')
+        m_esc = message.replace('"', '\\"')
+        cmd = f'display notification "{m_esc}" with title "{t_esc}"'
+        subprocess.run(["osascript", "-e", cmd], check=True)
+    except Exception as e:
+        print(f"Failed to send macOS notification: {e}")
+
 def clean_phone(phone_val, default_cc):
     """
     Cleans phone number:
     - Removes spaces, dashes, parentheses
+    - Handles float inputs (convert to int) to avoid scientific notation
     - Ensures it has a country code prefix (e.g. +91)
     """
     if pd.isna(phone_val):
         return None
     
-    # Convert to string and remove non-digit characters (keep '+' if present)
-    phone_str = str(phone_val).strip()
+    # If float, convert to int first to avoid scientific notation and decimals
+    if isinstance(phone_val, float):
+        try:
+            phone_str = str(int(phone_val))
+        except ValueError:
+            phone_str = str(phone_val)
+    else:
+        phone_str = str(phone_val).strip()
+        
     cleaned = "".join(c for c in phone_str if c.isdigit() or c == '+')
     
     if not cleaned:
@@ -200,6 +242,7 @@ def main():
             
     if not birthdays_today:
         print("🎉 No birthdays found for today!")
+        send_macos_notification("Birthday Automation", "🎉 No student birthdays found for today.")
         sys.exit(0)
         
     print(f"Found {len(birthdays_today)} student(s) with birthdays today:")
@@ -207,17 +250,17 @@ def main():
         print(f"  - {b['name']} ({b['phone']}) - Row {b['row']}")
         
     # Filter sent history
-    today_sent = history.get(today_str, [])
     pending_birthdays = []
     
     for b in birthdays_today:
-        if not args.force and b["phone"] in today_sent:
+        if not args.force and is_already_sent_today(history, b["phone"], today_str):
             print(f"ℹ️ Already sent today's birthday wish to {b['name']} ({b['phone']}). Skipping.")
         else:
             pending_birthdays.append(b)
             
     if not pending_birthdays:
         print("✅ All birthday wishes for today have already been sent!")
+        send_macos_notification("Birthday Automation", "✅ All birthday wishes for today have already been sent!")
         sys.exit(0)
         
     print(f"\nPending to send: {len(pending_birthdays)} student(s)")
@@ -241,16 +284,13 @@ def main():
         # Check login status (opens Chrome to WhatsApp Web)
         if not bot.check_login(timeout_sec=120):
             print("❌ WhatsApp Web authentication failed. Closing script.")
+            send_macos_notification("Birthday Automation Error", "❌ WhatsApp authentication failed. Wishes not sent.")
             bot.close()
             sys.exit(1)
             
         success_count = 0
         failed_count = 0
         
-        # Ensure list key exists in history
-        if today_str not in history:
-            history[today_str] = []
-            
         for i, student in enumerate(pending_birthdays):
             name = student["name"]
             phone = student["phone"]
@@ -262,14 +302,12 @@ def main():
             
             if result == "success":
                 print(f"✅ Successfully sent birthday wish to {name} ({phone})")
-                history[today_str].append(phone)
-                save_history(history)
+                add_history_record(history, name, phone, "success")
                 success_count += 1
             elif result == "invalid_number":
                 print(f"❌ Failed to send to {name} ({phone}): Phone number is not on WhatsApp.")
                 # We save in history to avoid retrying invalid number on subsequent runs today
-                history[today_str].append(phone)
-                save_history(history)
+                add_history_record(history, name, phone, "invalid_number")
                 failed_count += 1
             else:
                 print(f"⚠️ Failed to send to {name} ({phone}): {result}")
@@ -286,6 +324,12 @@ def main():
         print(f"\n--- Run Completed ---")
         print(f"Successfully sent: {success_count}")
         print(f"Failed / Skipped: {failed_count}")
+        
+        # Notification trigger
+        if success_count > 0:
+            send_macos_notification("Birthday Wishes Sent!", f"✅ Successfully sent wishes to {success_count} student(s).")
+        else:
+            send_macos_notification("Birthday Wishes Failed", f"❌ Failed to send wishes to {failed_count} student(s).")
         
     except KeyboardInterrupt:
         print("\n⚠️ Execution interrupted by user.")
