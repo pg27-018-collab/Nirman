@@ -165,6 +165,17 @@ async function loadConfig() {
     document.getElementById("min_delay_seconds").value = data.min_delay_seconds || 15;
     document.getElementById("max_delay_seconds").value = data.max_delay_seconds || 30;
     
+    // Automated daily sending
+    const autoSending = document.getElementById("automated_sending");
+    const schedTime = document.getElementById("scheduled_time");
+    const schedGroup = document.getElementById("scheduledTimeGroup");
+    
+    if (autoSending && schedTime && schedGroup) {
+      autoSending.checked = data.automated_sending || false;
+      schedTime.value = data.scheduled_time || "09:00";
+      schedGroup.style.display = data.automated_sending ? "block" : "none";
+    }
+    
   } catch (err) {
     console.error("Error loading config:", err);
   }
@@ -173,6 +184,15 @@ async function loadConfig() {
 // Save Configuration Settings
 async function setupConfigForm() {
   const form = document.getElementById("configForm");
+  const autoSending = document.getElementById("automated_sending");
+  const schedGroup = document.getElementById("scheduledTimeGroup");
+  
+  if (autoSending && schedGroup) {
+    autoSending.addEventListener("change", (e) => {
+      schedGroup.style.display = e.target.checked ? "block" : "none";
+    });
+  }
+  
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     
@@ -186,7 +206,9 @@ async function setupConfigForm() {
         name: document.getElementById("col_name").value,
         phone: document.getElementById("col_phone").value,
         birthday: document.getElementById("col_birthday").value
-      }
+      },
+      automated_sending: document.getElementById("automated_sending").checked,
+      scheduled_time: document.getElementById("scheduled_time").value
     };
     
     try {
@@ -271,6 +293,7 @@ function setupActionButtons() {
     blockerConnectBtn.addEventListener("click", async () => {
       const blockerPhoneInput = document.getElementById("blockerPhone");
       const phone = blockerPhoneInput.value.trim() || "Default";
+      const showBrowserPopup = document.getElementById("blockerHeadfulCheck").checked;
       
       currentSession = phone;
       
@@ -278,12 +301,12 @@ function setupActionButtons() {
         const res = await fetch("/api/login-whatsapp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_phone: phone })
+          body: JSON.stringify({ session_phone: phone, headless: !showBrowserPopup })
         });
         const data = await res.json();
         
         if (res.ok) {
-          showToast("WhatsApp Browser Opened. Scan QR Code!");
+          showToast(showBrowserPopup ? "WhatsApp browser window opened. Link there!" : "WhatsApp connection started. Scan QR code below!");
           startJobPolling();
         } else {
           showToast(data.error || "Failed to start WhatsApp connection", "error");
@@ -297,6 +320,7 @@ function setupActionButtons() {
   loginBtn.addEventListener("click", async () => {
     const newSessionInput = document.getElementById("newSessionPhone");
     let sessionToUse = newSessionInput.value.trim();
+    const showBrowserPopup = document.getElementById("dashboardHeadfulCheck").checked;
     
     if (sessionToUse === "") {
       const promptPhone = prompt("Enter a phone number or profile name to connect a new user:\n(Or leave blank to re-login/re-scan for the currently selected profile)");
@@ -312,12 +336,12 @@ function setupActionButtons() {
       const res = await fetch("/api/login-whatsapp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_phone: sessionToUse })
+        body: JSON.stringify({ session_phone: sessionToUse, headless: !showBrowserPopup })
       });
       const data = await res.json();
       
       if (res.ok) {
-        showToast("WhatsApp Browser Opened. Scan QR Code!");
+        showToast(showBrowserPopup ? "WhatsApp browser window opened. Link there!" : "WhatsApp connection started. Scan QR code below!");
         newSessionInput.value = ""; // Clear input
         currentSession = sessionToUse; // Switch selection to this profile
         

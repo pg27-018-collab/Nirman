@@ -80,7 +80,7 @@ def save_config(config):
     with open(core_main.CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 
-def run_login_thread(session_phone="Default"):
+def run_login_thread(session_phone, run_headless=True):
     global job_status
     with job_lock:
         job_status["status"] = "running_login"
@@ -97,9 +97,9 @@ def run_login_thread(session_phone="Default"):
         except Exception as remove_err:
             print(f"Warning: could not remove old QR screenshot: {remove_err}")
             
-    add_log(f"Starting browser for profile '{session_phone}'...")
+    add_log(f"Starting browser for profile '{session_phone}' (headless={run_headless})...")
     session_dir = f".session/{session_phone}"
-    bot = WhatsAppBot(user_data_dir=session_dir, headless=True)
+    bot = WhatsAppBot(user_data_dir=session_dir, headless=run_headless)
     try:
         bot.start()
         add_log("Browser launched. Checking login status (waiting for QR code if not logged in)...")
@@ -342,6 +342,78 @@ def run_send_thread(session_phone="Default", force_send=False):
         with job_lock:
             job_status["status"] = "idle"
         add_log("Sender runner thread finished.")
+
+def get_active_sessions():
+    session_dir = os.path.abspath(".session")
+    sessions = []
+    if os.path.exists(session_dir):
+        try:
+            for name in os.listdir(session_dir):
+                path = os.path.join(session_dir, name)
+                if os.path.isdir(path) and name not in ("BrowserMetrics", "GrShaderCache"):
+                    sessions.append(name)
+        except Exception as e:
+            print(f"Error listing sessions: {e}")
+    if "Default" not in sessions and check_session_exists("Default"):
+        sessions.append("Default")
+    return sessions
+
+def run_scheduler():
+    print("Automated Daily Sending Scheduler Thread started.")
+    while True:
+        try:
+            config = load_config()
+            if config.get("automated_sending", False):
+                now = datetime.now()
+                sched_str = config.get("scheduled_time", "09:00")
+                try:
+                    sched_parts = sched_str.strip().split(":")
+                    sched_hour = int(sched_parts[0])
+                    sched_minute = int(sched_parts[1])
+                except Exception as parse_err:
+                    print(f"Scheduler time parse error for '{sched_str}': {parse_err}")
+                    sched_hour = 9
+                    sched_minute = 0
+                
+                # Check if hour and minute matches
+                if now.hour == sched_hour and now.minute == sched_minute:
+                    today_str = now.strftime("%Y-%m-%d")
+                    # Check if already executed today
+                    if config.get("last_scheduler_run_date", "") != today_str:
+                        # Find an authenticated session to send messages
+                        sessions = get_active_sessions()
+                        session_to_use = None
+                        for s in sessions:
+                            if check_session_exists(s):
+                                session_to_use = s
+                                break
+                                
+                        if session_to_use:
+                            print(f"Scheduler: Matches daily time {sched_str}. Starting automated send for profile '{session_to_use}'...")
+                            with job_lock:
+                                if job_status["status"] == "idle":
+                                    # Update run date config
+                                    config["last_scheduler_run_date"] = today_str
+                                    save_config(config)
+                                    
+                                    job_status["status"] = "running_send"
+                                    job_status["success_count"] = 0
+                                    job_status["failed_count"] = 0
+                                    job_status["total_count"] = 0
+                                    job_status["logs"] = []
+                                    
+                                    threading.Thread(
+                                        target=run_send_thread,
+                                        args=(session_to_use, False) # force_send=False
+                                    ).start()
+                        else:
+                            print("Scheduler: Automated sending skipped because no authenticated WhatsApp sessions are available.")
+                            # Prevent continuous log spamming in this minute
+                            config["last_scheduler_run_date"] = today_str
+                            save_config(config)
+        except Exception as e:
+            print(f"Error in scheduler loop: {e}")
+        time.sleep(30) # Sleep 30 seconds
 
 # --- ROUTES ---
 
@@ -730,15 +802,16 @@ def login_whatsapp():
     session_phone = data.get("session_phone", "Default").strip()
     if not session_phone:
         session_phone = "Default"
+    run_headless = data.get("headless", True)
         
     with job_lock:
         if job_status["status"] != "idle":
             return jsonify({"error": f"Another process is already running ({job_status['status']})"}), 400
             
-    thread = threading.Thread(target=run_login_thread, args=(session_phone,))
+    thread = threading.Thread(target=run_login_thread, args=(session_phone, run_headless))
     thread.daemon = True
     thread.start()
-    return jsonify({"message": f"WhatsApp Login launched for '{session_phone}'. Scan QR code in Chrome window."})
+    return jsonify({"message": f"WhatsApp Login launched for '{session_phone}'. Scan QR code."})
 
 @app.route("/api/send-wishes", methods=["POST"])
 def send_wishes():
@@ -768,4 +841,10 @@ def get_history_log():
     return jsonify(core_main.load_history().get("sent_records", []))
 
 if __name__ == "__main__":
+    # Start background daily wisher scheduler
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        scheduler_thread = threading.Thread(target=run_scheduler)
+        scheduler_thread.daemon = True
+        scheduler_thread.start()
+
     app.run(host="0.0.0.0", port=8082, debug=True)

@@ -23,6 +23,11 @@
         <input type="text" id="blockerPhone" placeholder="Default Account" style="width: 100%; padding: 0.75rem; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--glass-border); border-radius: 8px; color: #fff; font-family: inherit; font-size: 0.95rem; outline: none; transition: var(--transition); box-sizing: border-box;">
       </div>
       
+      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; text-align: left;">
+        <input type="checkbox" id="blockerHeadfulCheck" style="width: auto; cursor: pointer; height: auto;">
+        <label for="blockerHeadfulCheck" style="margin-bottom: 0; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; user-select: none;">Show WhatsApp Web browser popup window</label>
+      </div>
+      
       <button id="blockerConnectBtn" class="btn" style="width: 100%; font-size: 1rem; padding: 0.85rem; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;">⚡ Connect WhatsApp</button>
 
       <!-- Streaming QR Code Container inside Blocker -->
@@ -215,6 +220,10 @@
 
         <div class="form-group" style="margin-bottom: 1.5rem;">
           <label for="newSessionPhone">Connect New Account</label>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+            <input type="checkbox" id="dashboardHeadfulCheck" style="width: auto; cursor: pointer; height: auto;">
+            <label for="dashboardHeadfulCheck" style="margin-bottom: 0; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; user-select: none;">Show WhatsApp Web browser popup window</label>
+          </div>
           <div style="display: flex; gap: 0.5rem;">
             <input type="text" id="newSessionPhone" placeholder="Enter Phone (e.g. +91...)" style="flex: 1; padding: 0.75rem; border-radius: 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); color: #fff;">
             <button id="loginBtn" class="btn btn-secondary" style="width: auto; white-space: nowrap; padding: 0 1rem; border-radius: 0.5rem;">
@@ -317,6 +326,19 @@
                 <label style="font-size: 0.75rem;" for="max_delay_seconds">Max</label>
                 <input type="number" id="max_delay_seconds" min="6" required>
               </div>
+            </div>
+          </div>
+
+          <!-- Automated Sending Configurations -->
+          <div class="form-group" style="border-top: 1px solid var(--glass-border); padding-top: 1.25rem; margin-top: 1.25rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+              <label for="automated_sending" style="margin-bottom: 0; font-weight: 600; cursor: pointer; user-select: none;">Enable Automated Daily Sending</label>
+              <input type="checkbox" id="automated_sending" style="width: auto; height: auto; transform: scale(1.2); cursor: pointer;">
+            </div>
+            
+            <div id="scheduledTimeGroup" style="display: none; transition: var(--transition);">
+              <label for="scheduled_time" style="font-size: 0.75rem;">Daily Sending Time (24-Hour Format)</label>
+              <input type="time" id="scheduled_time" style="background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); color: #fff; padding: 0.5rem 0.75rem; border-radius: 0.5rem; width: 100%; box-sizing: border-box; outline: none; font-family: inherit;">
             </div>
           </div>
 
