@@ -29,9 +29,26 @@ def add_log(message):
     with job_lock:
         job_status["logs"].append(log_line)
 
-def check_session_exists():
-    session_dir = os.path.abspath(".session")
-    # If the directory exists and contains files/folders, we assume a session is cached
+def check_session_exists(session_phone="Default"):
+    if not session_phone:
+        session_phone = "Default"
+    session_dir = os.path.abspath(f".session/{session_phone}")
+    if session_phone == "Default":
+        # Check specific Default folder first
+        if os.path.exists(session_dir) and os.listdir(session_dir):
+            return True
+        # Legacy support: check if there are browser session files directly in .session/
+        root_session = os.path.abspath(".session")
+        if os.path.exists(root_session):
+            items = os.listdir(root_session)
+            # If files exist directly in .session or default chromium folders exist
+            files = [n for n in items if os.path.isfile(os.path.join(root_session, n))]
+            dirs = [n for n in items if os.path.isdir(os.path.join(root_session, n)) and n not in ("Default",)]
+            # If default chromium folders (e.g. BrowserMetrics, GrShaderCache) are present
+            if files or any(n in ("BrowserMetrics", "GrShaderCache", "Local State") for n in items):
+                return True
+        return False
+        
     if os.path.exists(session_dir) and os.listdir(session_dir):
         return True
     return False
@@ -53,14 +70,15 @@ def save_config(config):
     with open(core_main.CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 
-def run_login_thread():
+def run_login_thread(session_phone="Default"):
     global job_status
     with job_lock:
         job_status["status"] = "running_login"
         job_status["logs"] = []
     
-    add_log("Starting browser in headful mode for login...")
-    bot = WhatsAppBot(user_data_dir=".session", headless=False)
+    add_log(f"Starting browser for profile '{session_phone}'...")
+    session_dir = f".session/{session_phone}"
+    bot = WhatsAppBot(user_data_dir=session_dir, headless=False)
     try:
         bot.start()
         add_log("Browser launched. Checking login status (waiting for QR code if not logged in)...")
@@ -111,7 +129,7 @@ def run_login_thread():
             job_status["status"] = "idle"
         add_log("Login runner thread finished.")
 
-def run_send_thread(force_send=False):
+def run_send_thread(session_phone="Default", force_send=False):
     global job_status
     with job_lock:
         job_status["status"] = "running_send"
@@ -206,10 +224,11 @@ def run_send_thread(force_send=False):
         job_status["total_count"] = len(pending_birthdays)
         
     # Start bot
-    bot = WhatsAppBot(user_data_dir=".session", headless=False)
+    session_dir = f".session/{session_phone}"
+    bot = WhatsAppBot(user_data_dir=session_dir, headless=False)
     try:
         bot.start()
-        add_log("Checking authentication...")
+        add_log(f"Checking authentication for profile '{session_phone}'...")
         # Check login status
         bot.page.goto("https://web.whatsapp.com/")
         
@@ -241,12 +260,12 @@ def run_send_thread(force_send=False):
             
             if result == "success":
                 add_log(f"✅ Sent successfully to {name}!")
-                core_main.add_history_record(history, name, phone, "success")
+                core_main.add_history_record(history, name, phone, "success", sender_profile=session_phone)
                 with job_lock:
                     job_status["success_count"] += 1
             elif result == "invalid_number":
                 add_log(f"❌ Failed: Phone number {phone} is not registered on WhatsApp.")
-                core_main.add_history_record(history, name, phone, "invalid_number")
+                core_main.add_history_record(history, name, phone, "invalid_number", sender_profile=session_phone)
                 with job_lock:
                     job_status["failed_count"] += 1
             else:
@@ -288,6 +307,7 @@ def get_status():
     config = load_config()
     excel_path = config.get("excel_path", "students.xlsx")
     excel_exists = os.path.exists(excel_path)
+    session_phone = request.args.get("session", "Default")
     
     total_students = 0
     birthdays_count = 0
@@ -323,7 +343,7 @@ def get_status():
     return jsonify({
         "excel_exists": excel_exists,
         "excel_path": excel_path,
-        "whatsapp_authenticated": check_session_exists(),
+        "whatsapp_authenticated": check_session_exists(session_phone),
         "total_students": total_students,
         "birthdays_count": birthdays_count,
         "sent_today_count": sent_today_count,
@@ -334,6 +354,7 @@ def get_status():
 def get_birthdays():
     config = load_config()
     excel_path = config.get("excel_path", "students.xlsx")
+    session_phone = request.args.get("session", "Default")
     
     if not os.path.exists(excel_path):
         return jsonify({"date": datetime.now().strftime("%Y-%m-%d"), "birthdays": []})
@@ -411,46 +432,78 @@ def manage_configuration():
 
 @app.route("/api/upload", methods=["POST"])
 def upload_file():
-    if "file" not in request.files:
-        return jsonify({"error": "No file part in request"}), 400
-    file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"error": "No file selected"}), 400
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "No file part in request"}), 400
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
+            
+        if file and file.filename.lower().endswith((".xlsx", ".xls")):
+            config = load_config()
+            save_path = config.get("excel_path", "students.xlsx")
+            file.save(save_path)
+            return jsonify({"message": f"Successfully uploaded spreadsheet and saved to {save_path}"})
+        else:
+            return jsonify({"error": "Only Microsoft Excel (.xlsx or .xls) spreadsheets are supported. Make sure the file extension is correct."}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to save file: {str(e)}"}), 500
+
+@app.route("/api/sessions")
+def get_sessions():
+    session_dir = os.path.abspath(".session")
+    sessions = []
+    if os.path.exists(session_dir):
+        try:
+            for name in os.listdir(session_dir):
+                path = os.path.join(session_dir, name)
+                if os.path.isdir(path):
+                    # We check if it is a directory representing a phone session (e.g. not chromium cache directories)
+                    if name not in ("BrowserMetrics", "GrShaderCache"):
+                        sessions.append(name)
+        except Exception as e:
+            print(f"Error listing sessions: {e}")
+            
+    # Include Default if we have a legacy login at the root .session/
+    if "Default" not in sessions and check_session_exists("Default"):
+        sessions.append("Default")
         
-    if file and file.filename.endswith((".xlsx", ".xls")):
-        config = load_config()
-        save_path = config.get("excel_path", "students.xlsx")
-        file.save(save_path)
-        return jsonify({"message": f"Successfully uploaded spreadsheet and saved to {save_path}"})
-    else:
-        return jsonify({"error": "Only Microsoft Excel (.xlsx or .xls) spreadsheets are supported."}), 400
+    return jsonify(sessions)
 
 @app.route("/api/login-whatsapp", methods=["POST"])
 def login_whatsapp():
     global job_status
+    data = request.json or {}
+    session_phone = data.get("session_phone", "Default").strip()
+    if not session_phone:
+        session_phone = "Default"
+        
     with job_lock:
         if job_status["status"] != "idle":
             return jsonify({"error": f"Another process is already running ({job_status['status']})"}), 400
             
-    thread = threading.Thread(target=run_login_thread)
+    thread = threading.Thread(target=run_login_thread, args=(session_phone,))
     thread.daemon = True
     thread.start()
-    return jsonify({"message": "WhatsApp Login launched. Scan QR code in Chrome window."})
+    return jsonify({"message": f"WhatsApp Login launched for '{session_phone}'. Scan QR code in Chrome window."})
 
 @app.route("/api/send-wishes", methods=["POST"])
 def send_wishes():
     global job_status
     data = request.json or {}
     force_send = data.get("force", False)
-    
+    session_phone = data.get("session_phone", "Default").strip()
+    if not session_phone:
+        session_phone = "Default"
+        
     with job_lock:
         if job_status["status"] != "idle":
             return jsonify({"error": f"Another process is already running ({job_status['status']})"}), 400
             
-    thread = threading.Thread(target=run_send_thread, args=(force_send,))
+    thread = threading.Thread(target=run_send_thread, args=(session_phone, force_send))
     thread.daemon = True
     thread.start()
-    return jsonify({"message": "Birthday sending process started in background."})
+    return jsonify({"message": f"Birthday sending process started for '{session_phone}' in background."})
 
 @app.route("/api/job-status")
 def get_job_status():

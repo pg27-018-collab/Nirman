@@ -41,7 +41,7 @@ def is_already_sent_today(history, phone, today_str):
     records = history.get("sent_records", [])
     return any(r["date"] == today_str and r["phone"] == phone for r in records)
 
-def add_history_record(history, name, phone, status):
+def add_history_record(history, name, phone, status, sender_profile="Default"):
     today_str = datetime.now().strftime("%Y-%m-%d")
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -53,7 +53,8 @@ def add_history_record(history, name, phone, status):
             "timestamp": timestamp_str,
             "name": name,
             "phone": phone,
-            "status": status
+            "status": status,
+            "sender_profile": sender_profile
         })
     history["sent_records"] = records
     save_history(history)

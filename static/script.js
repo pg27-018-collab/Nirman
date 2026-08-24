@@ -1,12 +1,15 @@
 // Frontend logic for WhatsApp Birthday Dashboard
 
 let statusPollInterval = null;
+let currentSession = "Default";
 
 document.addEventListener("DOMContentLoaded", () => {
   // Initial Loads
-  loadStatus();
-  loadBirthdays();
-  loadHistory();
+  loadSessions().then(() => {
+    loadStatus();
+    loadBirthdays();
+    loadHistory();
+  });
   loadConfig();
   
   // Setup Event Listeners
@@ -41,7 +44,7 @@ function showToast(message, type = "success") {
 // Load System Status
 async function loadStatus() {
   try {
-    const res = await fetch("/api/status");
+    const res = await fetch(`/api/status?session=${currentSession}`);
     const data = await res.json();
     
     // Header Status Badge
@@ -86,7 +89,7 @@ async function loadStatus() {
 // Load Birthdays Table
 async function loadBirthdays() {
   try {
-    const res = await fetch("/api/birthdays");
+    const res = await fetch(`/api/birthdays?session=${currentSession}`);
     const data = await res.json();
     
     const tbody = document.getElementById("birthdayTableBody");
@@ -242,12 +245,26 @@ function setupActionButtons() {
   const sendBtn = document.getElementById("sendBtn");
   
   loginBtn.addEventListener("click", async () => {
+    const newSessionInput = document.getElementById("newSessionPhone");
+    let sessionToUse = currentSession;
+    
+    // If a phone number is entered in the input, use it to connect a new account
+    if (newSessionInput.value.trim() !== "") {
+      sessionToUse = newSessionInput.value.trim();
+    }
+    
     try {
-      const res = await fetch("/api/login-whatsapp", { method: "POST" });
+      const res = await fetch("/api/login-whatsapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_phone: sessionToUse })
+      });
       const data = await res.json();
       
       if (res.ok) {
         showToast("WhatsApp Browser Opened. Scan QR Code!");
+        newSessionInput.value = ""; // Clear input
+        currentSession = sessionToUse; // Switch selection to this profile
         startJobPolling();
       } else {
         showToast(data.error || "Failed to launch login", "error");
@@ -263,7 +280,10 @@ function setupActionButtons() {
       const res = await fetch("/api/send-wishes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force: forceSend })
+        body: JSON.stringify({
+          force: forceSend,
+          session_phone: currentSession
+        })
       });
       const data = await res.json();
       
@@ -302,9 +322,11 @@ function startJobPolling() {
         setActionsDisabled(false);
         showToast("Process completed.");
         // Reload all data
-        loadStatus();
-        loadBirthdays();
-        loadHistory();
+        loadSessions().then(() => {
+          loadStatus();
+          loadBirthdays();
+          loadHistory();
+        });
       } else {
         // Update button text to reflect work
         if (job.status === "running_login") {
@@ -397,5 +419,33 @@ async function loadHistory() {
     });
   } catch (err) {
     console.error("Error loading history:", err);
+  }
+}
+
+// Load WhatsApp sessions list
+async function loadSessions() {
+  try {
+    const res = await fetch("/api/sessions");
+    const sessions = await res.json();
+    
+    const select = document.getElementById("sessionSelect");
+    select.innerHTML = "";
+    
+    // Ensure Default is always an option
+    if (!sessions.includes("Default")) {
+      sessions.unshift("Default");
+    }
+    
+    sessions.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s;
+      opt.innerText = s === "Default" ? "Default Account" : `Account: ${s}`;
+      select.appendChild(opt);
+    });
+    
+    // Select the current session
+    select.value = currentSession;
+  } catch (err) {
+    console.error("Error loading sessions:", err);
   }
 }
