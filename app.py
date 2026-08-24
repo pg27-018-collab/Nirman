@@ -446,6 +446,7 @@ def get_birthdays():
             
         target_date_str = target_date.strftime("%Y-%m-%d")
         history = core_main.load_history()
+        month_val = int(request.args.get("month", today.month))
         
         for idx, row in df.iterrows():
             name = row.get(name_col)
@@ -467,31 +468,71 @@ def get_birthdays():
                 if not dob:
                     continue
                     
-                # Match target date month & day
-                if dob.month == target_date.month and dob.day == target_date.day:
-                    cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
-                    
-                    if day_param == "tomorrow":
-                        status = "upcoming"
-                    else:
-                        status = "pending"
-                        if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, target_date_str):
-                            # Check status in history
-                            records = history.get("sent_records", [])
-                            record = next((r for r in records if r["date"] == target_date_str and r["phone"] == cleaned_p), None)
-                            if record and record["status"] == "invalid_number":
-                                status = "failed"
-                            else:
-                                status = "sent"
+                match = False
+                status = "pending"
+                
+                # Matching filters
+                if day_param == "month":
+                    if dob.month == month_val:
+                        match = True
                         
+                        # Determine status for monthly view (passed, today, upcoming)
+                        try:
+                            bday_this_year = datetime(today.year, dob.month, dob.day)
+                        except ValueError:
+                            # Handle Feb 29 on non-leap years
+                            bday_this_year = datetime(today.year, 3, 1)
+                            
+                        today_midnight = datetime(today.year, today.month, today.day)
+                        
+                        if bday_this_year.date() < today_midnight.date():
+                            status = "passed"
+                        elif bday_this_year.date() == today_midnight.date():
+                            cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
+                            if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today.strftime("%Y-%m-%d")):
+                                # Check status in history
+                                records = history.get("sent_records", [])
+                                record = next((r for r in records if r["date"] == today.strftime("%Y-%m-%d") and r["phone"] == cleaned_p), None)
+                                if record and record["status"] == "invalid_number":
+                                    status = "failed"
+                                else:
+                                    status = "sent"
+                            else:
+                                status = "pending"
+                        else:
+                            status = "upcoming"
+                else:
+                    if dob.month == target_date.month and dob.day == target_date.day:
+                        match = True
+                        cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
+                        
+                        if day_param == "tomorrow":
+                            status = "upcoming"
+                        else:
+                            status = "pending"
+                            if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, target_date_str):
+                                # Check status in history
+                                records = history.get("sent_records", [])
+                                record = next((r for r in records if r["date"] == target_date_str and r["phone"] == cleaned_p), None)
+                                if record and record["status"] == "invalid_number":
+                                    status = "failed"
+                                else:
+                                    status = "sent"
+                                    
+                if match:
                     birthdays.append({
                         "name": str(name).strip(),
                         "phone": str(phone).strip() if pd.notna(phone) else "",
                         "birthday": str(dob_val).split(" ")[0],
                         "status": status,
+                        "day_of_month": dob.day,
                         "row": idx + 2  # Excel is 1-based, plus header row
                     })
                     
+        # Sort results chronologically by day if in monthly view
+        if day_param == "month":
+            birthdays.sort(key=lambda x: x["day_of_month"])
+            
         return jsonify({
             "date": target_date_str,
             "birthdays": birthdays

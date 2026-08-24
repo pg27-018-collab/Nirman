@@ -266,6 +266,11 @@ tr:hover td {
   color: #fcd34d;
 }
 
+.status-indicator.passed {
+  background-color: rgba(156, 163, 175, 0.15);
+  color: var(--text-muted);
+}
+
 .tab-btn.active {
   background-color: var(--primary) !important;
   color: #fff !important;

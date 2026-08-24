@@ -92,14 +92,22 @@ async function loadStatus() {
 // Load Birthdays Table
 async function loadBirthdays() {
   try {
-    const res = await fetch(`/api/birthdays?session=${currentSession}&day=${activeTab}`);
+    const selectedMonth = document.getElementById("monthSelect") ? document.getElementById("monthSelect").value : new Date().getMonth() + 1;
+    const res = await fetch(`/api/birthdays?session=${currentSession}&day=${activeTab}&month=${selectedMonth}`);
     const data = await res.json();
     
     const tbody = document.getElementById("birthdayTableBody");
     tbody.innerHTML = "";
     
     if (data.birthdays.length === 0) {
-      const dayText = activeTab === "tomorrow" ? "tomorrow" : "today";
+      let dayText = "today";
+      if (activeTab === "tomorrow") {
+        dayText = "tomorrow";
+      } else if (activeTab === "month") {
+        const monthSelect = document.getElementById("monthSelect");
+        const monthName = monthSelect ? monthSelect.options[monthSelect.selectedIndex].text : "this month";
+        dayText = monthName;
+      }
       tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">🎉 No birthdays found for ${dayText}!</td></tr>`;
       return;
     }
@@ -118,6 +126,9 @@ async function loadBirthdays() {
       } else if (b.status === "upcoming") {
         statusClass = "upcoming";
         statusText = "Upcoming";
+      } else if (b.status === "passed") {
+        statusClass = "passed";
+        statusText = "Passed";
       }
       
       tr.innerHTML = `
@@ -518,16 +529,31 @@ async function loadSessions() {
   }
 }
 
-// Setup Today/Tomorrow toggles
+// Setup Today/Tomorrow/Month toggles
 function setupTabs() {
   const tabToday = document.getElementById("tabToday");
   const tabTomorrow = document.getElementById("tabTomorrow");
+  const tabMonth = document.getElementById("tabMonth");
+  const monthSelector = document.getElementById("monthSelectorContainer");
+  const monthSelect = document.getElementById("monthSelect");
   
-  if (tabToday && tabTomorrow) {
+  // Set default selected month based on current date (1-indexed month)
+  if (monthSelect) {
+    const currentMonthNum = new Date().getMonth() + 1;
+    monthSelect.value = currentMonthNum.toString();
+    
+    monthSelect.addEventListener("change", () => {
+      loadBirthdays();
+    });
+  }
+  
+  if (tabToday && tabTomorrow && tabMonth) {
     tabToday.addEventListener("click", () => {
       activeTab = "today";
       tabToday.classList.add("active");
       tabTomorrow.classList.remove("active");
+      tabMonth.classList.remove("active");
+      if (monthSelector) monthSelector.style.display = "none";
       loadBirthdays();
     });
     
@@ -535,6 +561,17 @@ function setupTabs() {
       activeTab = "tomorrow";
       tabTomorrow.classList.add("active");
       tabToday.classList.remove("active");
+      tabMonth.classList.remove("active");
+      if (monthSelector) monthSelector.style.display = "none";
+      loadBirthdays();
+    });
+    
+    tabMonth.addEventListener("click", () => {
+      activeTab = "month";
+      tabMonth.classList.add("active");
+      tabToday.classList.remove("active");
+      tabTomorrow.classList.remove("active");
+      if (monthSelector) monthSelector.style.display = "flex";
       loadBirthdays();
     });
   }

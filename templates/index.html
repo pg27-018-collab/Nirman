@@ -63,8 +63,29 @@
           <div style="display: flex; gap: 0.5rem; background: rgba(0, 0, 0, 0.2); padding: 0.25rem; border-radius: 0.5rem; border: 1px solid var(--glass-border);">
             <button id="tabToday" class="tab-btn active" style="background: none; border: none; color: #fff; font-weight: 600; font-size: 0.85rem; cursor: pointer; padding: 0.4rem 1rem; border-radius: 0.35rem; transition: var(--transition);">Today</button>
             <button id="tabTomorrow" class="tab-btn" style="background: none; border: none; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; cursor: pointer; padding: 0.4rem 1rem; border-radius: 0.35rem; transition: var(--transition);">Tomorrow</button>
+            <button id="tabMonth" class="tab-btn" style="background: none; border: none; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; cursor: pointer; padding: 0.4rem 1rem; border-radius: 0.35rem; transition: var(--transition);">By Month</button>
           </div>
         </div>
+        
+        <!-- Month Selector Dropdown (visible when 'By Month' tab is active) -->
+        <div id="monthSelectorContainer" style="display: none; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-bottom: 1rem; padding-right: 0.25rem;">
+          <label for="monthSelect" style="margin-bottom: 0; font-size: 0.85rem; color: var(--text-muted);">View Month:</label>
+          <select id="monthSelect" style="background-color: rgba(0, 0, 0, 0.3); border: 1px solid var(--glass-border); color: #fff; padding: 0.4rem 0.75rem; border-radius: 0.5rem; font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer; width: auto;">
+            <option value="1">January</option>
+            <option value="2">February</option>
+            <option value="3">March</option>
+            <option value="4">April</option>
+            <option value="5">May</option>
+            <option value="6">June</option>
+            <option value="7">July</option>
+            <option value="8">August</option>
+            <option value="9">September</option>
+            <option value="10">October</option>
+            <option value="11">November</option>
+            <option value="12">December</option>
+          </select>
+        </div>
+        
         <div class="table-container">
           <table>
             <thead>
