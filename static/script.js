@@ -293,7 +293,6 @@ function setupActionButtons() {
     blockerConnectBtn.addEventListener("click", async () => {
       const blockerPhoneInput = document.getElementById("blockerPhone");
       const phone = blockerPhoneInput.value.trim();
-      const showBrowserPopup = document.getElementById("blockerHeadfulCheck").checked;
       
       if (!phone) {
         showToast("Please enter a phone number or profile name to connect!", "error");
@@ -306,12 +305,12 @@ function setupActionButtons() {
         const res = await fetch("/api/login-whatsapp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_phone: phone, headless: !showBrowserPopup })
+          body: JSON.stringify({ session_phone: phone, headless: true })
         });
         const data = await res.json();
         
         if (res.ok) {
-          showToast(showBrowserPopup ? "WhatsApp browser window opened. Link there!" : "WhatsApp connection started. Scan QR code below!");
+          showToast("WhatsApp connection started. Scan QR code below!");
           startJobPolling();
         } else {
           showToast(data.error || "Failed to start WhatsApp connection", "error");
@@ -325,7 +324,6 @@ function setupActionButtons() {
   loginBtn.addEventListener("click", async () => {
     const newSessionInput = document.getElementById("newSessionPhone");
     let sessionToUse = newSessionInput.value.trim();
-    const showBrowserPopup = document.getElementById("dashboardHeadfulCheck").checked;
     
     if (sessionToUse === "") {
       showToast("Please enter a phone number or profile name to link account!", "error");
@@ -336,12 +334,12 @@ function setupActionButtons() {
       const res = await fetch("/api/login-whatsapp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_phone: sessionToUse, headless: !showBrowserPopup })
+        body: JSON.stringify({ session_phone: sessionToUse, headless: true })
       });
       const data = await res.json();
       
       if (res.ok) {
-        showToast(showBrowserPopup ? "WhatsApp browser window opened. Link there!" : "WhatsApp connection started. Scan QR code below!");
+        showToast("WhatsApp connection started. Scan the QR code below!");
         newSessionInput.value = ""; // Clear input
         currentSession = sessionToUse; // Switch selection to this profile
         
