@@ -30,7 +30,8 @@ job_status = {
     "success_count": 0,
     "failed_count": 0,
     "total_count": 0,
-    "qr_base64": None
+    "qr_base64": None,
+    "login_detected": False
 }
 
 def add_log(message):
@@ -74,6 +75,7 @@ def run_login_thread(session_phone, run_headless=True):
         job_status["status"] = "running_login"
         job_status["logs"] = []
         job_status["qr_base64"] = None
+        job_status["login_detected"] = False
             
     logged_in = False
     session_dir = get_session_dir(session_phone)
@@ -144,6 +146,7 @@ def run_login_thread(session_phone, run_headless=True):
                     add_log("✅ Login successful! WhatsApp connected. Saving session storage to disk (please wait 8s)...")
                     with job_lock:
                         job_status["qr_base64"] = None
+                        job_status["login_detected"] = True
                     time.sleep(8)
                     break
                     
@@ -505,10 +508,16 @@ def get_status():
     except Exception as e:
         print(f"Error loading SQLite stats: {str(e)}")
         
+    is_authenticated = check_session_exists(session_phone)
+    if not is_authenticated:
+        with job_lock:
+            if job_status.get("login_detected") and job_status.get("status") == "running_login":
+                is_authenticated = True
+
     return jsonify({
         "excel_exists": excel_exists or total_students > 0,
         "excel_path": excel_path,
-        "whatsapp_authenticated": check_session_exists(session_phone),
+        "whatsapp_authenticated": is_authenticated,
         "total_students": total_students,
         "birthdays_count": birthdays_count,
         "birthdays_tomorrow_count": birthdays_tomorrow_count,

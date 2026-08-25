@@ -433,11 +433,15 @@ function startJobPolling() {
       
       updateConsoleLogs(job.logs);
       
-      if (job.status === "idle") {
+      if (job.status === "idle" || job.login_detected) {
         clearInterval(statusPollInterval);
         statusPollInterval = null;
         setActionsDisabled(false);
-        showToast("Process completed.");
+        if (job.login_detected) {
+          showToast("WhatsApp login successful! Dashboard unlocked.");
+        } else {
+          showToast("Process completed.");
+        }
         
         // Hide QR Code Containers on completion
         const qrContainer = document.getElementById("qrCodeContainer");
