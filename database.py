@@ -145,3 +145,22 @@ def get_history_records():
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def add_connected_session(phone):
+    sessions = get_connected_sessions()
+    if phone not in sessions:
+        sessions.append(phone)
+        set_setting("connected_sessions", json.dumps(sessions))
+
+def remove_connected_session(phone):
+    sessions = get_connected_sessions()
+    if phone in sessions:
+        sessions.remove(phone)
+        set_setting("connected_sessions", json.dumps(sessions))
+
+def get_connected_sessions():
+    sessions_str = get_setting("connected_sessions", "[]")
+    try:
+        return json.loads(sessions_str)
+    except:
+        return []

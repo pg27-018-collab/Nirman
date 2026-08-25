@@ -53,9 +53,17 @@ def check_session_exists(session_phone="Default"):
     if not session_phone:
         return False
     session_dir = get_session_dir(session_phone)
-    if os.path.exists(session_dir) and os.listdir(session_dir):
-        return True
-    return False
+    exists_on_disk = os.path.exists(session_dir) and os.listdir(session_dir)
+    in_database = session_phone in database.get_connected_sessions()
+    
+    if not exists_on_disk and in_database:
+        try:
+            database.remove_connected_session(session_phone)
+        except:
+            pass
+        return False
+        
+    return bool(exists_on_disk and in_database)
 
 import database
 
@@ -143,6 +151,10 @@ def run_login_thread(session_phone, run_headless=True):
                 # Check Logged In
                 if bot.page.locator(chatlist_selector).count() > 0:
                     logged_in = True
+                    try:
+                        database.add_connected_session(session_phone)
+                    except Exception as db_err:
+                        print(f"Error registering connected session: {db_err}")
                     add_log("✅ Login successful! WhatsApp connected. Saving session storage to disk (please wait 8s)...")
                     with job_lock:
                         job_status["qr_base64"] = None
@@ -725,20 +737,12 @@ def upload_file():
 
 @app.route("/api/sessions")
 def get_sessions():
-    session_dir = get_session_dir("")
-    sessions = []
-    if os.path.exists(session_dir):
-        try:
-            for name in os.listdir(session_dir):
-                path = os.path.join(session_dir, name)
-                if os.path.isdir(path):
-                    # We check if it is a directory representing a phone session (e.g. not chromium cache directories)
-                    if name not in ("BrowserMetrics", "GrShaderCache"):
-                        sessions.append(name)
-        except Exception as e:
-            print(f"Error listing sessions: {e}")
-            
-    return jsonify(sessions)
+    sessions = database.get_connected_sessions()
+    valid_sessions = []
+    for s in sessions:
+        if check_session_exists(s):
+            valid_sessions.append(s)
+    return jsonify(valid_sessions)
 
 @app.route("/api/delete-session", methods=["POST"])
 def delete_session():
@@ -778,8 +782,11 @@ def delete_session():
                 print(f"Warning clearing legacy files: {e}")
         return jsonify({"message": "Default session profile cleared successfully."})
         
-    # Clear custom phone session folder
     session_dir = get_session_dir(session_phone)
+    try:
+        database.remove_connected_session(session_phone)
+    except Exception as db_err:
+        print(f"Error removing connected session: {db_err}")
     if os.path.exists(session_dir):
         try:
             shutil.rmtree(session_dir)
