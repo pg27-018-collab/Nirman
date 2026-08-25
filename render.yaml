@@ -3,7 +3,7 @@ services:
     name: whatsapp-birthday-wisher
     runtime: docker
     dockerfilePath: Dockerfile
-    plan: free
+    plan: starter
     healthCheckPath: /api/job-status
     envVars:
       - key: PORT
