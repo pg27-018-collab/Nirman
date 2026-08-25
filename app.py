@@ -29,7 +29,8 @@ job_status = {
     "logs": [],
     "success_count": 0,
     "failed_count": 0,
-    "total_count": 0
+    "total_count": 0,
+    "qr_base64": None
 }
 
 def add_log(message):
@@ -39,50 +40,43 @@ def add_log(message):
     with job_lock:
         job_status["logs"].append(log_line)
 
+def get_session_dir(session_phone=""):
+    base_dir = os.environ.get("DATA_DIR", ".")
+    session_root = os.path.abspath(os.path.join(base_dir, ".session"))
+    os.makedirs(session_root, exist_ok=True)
+    if not session_phone:
+        return session_root
+    return os.path.abspath(os.path.join(session_root, session_phone))
+
 def check_session_exists(session_phone="Default"):
     if not session_phone:
         return False
-    session_dir = os.path.abspath(f".session/{session_phone}")
+    session_dir = get_session_dir(session_phone)
     if os.path.exists(session_dir) and os.listdir(session_dir):
         return True
     return False
 
+import database
+
 def load_config():
-    if not os.path.exists(core_main.CONFIG_FILE):
-        return {
-            "excel_path": "students.xlsx",
-            "columns": {"name": "Name", "phone": "Phone", "birthday": "Birthday"},
-            "default_country_code": "+91",
-            "message_template": "Happy Birthday, {Name}! 🎉🎂 Wishing you a fantastic year ahead! Hope you have a wonderful day!",
-            "min_delay_seconds": 15,
-            "max_delay_seconds": 30
-        }
-    with open(core_main.CONFIG_FILE, "r") as f:
-        return json.load(f)
+    return database.get_config()
 
 def save_config(config):
-    with open(core_main.CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
+    database.save_config(config)
 
 def run_login_thread(session_phone, run_headless=True):
     global job_status
     with job_lock:
         job_status["status"] = "running_login"
         job_status["logs"] = []
-    
-    # Path to save screenshots
-    qr_filename = f"qr_{session_phone}.png"
-    qr_path = os.path.join(app.static_folder, qr_filename)
-    
-    # Delete pre-existing QR code screenshot if exists
-    if os.path.exists(qr_path):
-        try:
-            os.remove(qr_path)
-        except Exception as remove_err:
-            print(f"Warning: could not remove old QR screenshot: {remove_err}")
+    import base64
+    with job_lock:
+        job_status["status"] = "running_login"
+        job_status["logs"] = []
+        job_status["qr_base64"] = None
             
     logged_in = False
-    session_dir = f".session/{session_phone}"
+    session_dir = get_session_dir(session_phone)
     
     # Standard and alternative selectors to confirm logged-in state
     chatlist_selector = 'div[data-testid="chat-list"], div#pane-side, span[data-testid="default-user-profile"], div[data-testid="intro-text"], span[data-testid="menu"], div[role="textbox"]'
@@ -111,11 +105,9 @@ def run_login_thread(session_phone, run_headless=True):
                 pass
                 
     if logged_in:
-        if os.path.exists(qr_path):
-            try: os.remove(qr_path)
-            except: pass
         with job_lock:
             job_status["status"] = "idle"
+            job_status["qr_base64"] = None
         add_log("Login connection worker finished.")
         return
         
@@ -150,6 +142,8 @@ def run_login_thread(session_phone, run_headless=True):
                 if bot.page.locator(chatlist_selector).count() > 0:
                     logged_in = True
                     add_log("✅ Login successful! WhatsApp connected. Saving session storage to disk (please wait 8s)...")
+                    with job_lock:
+                        job_status["qr_base64"] = None
                     time.sleep(8)
                     break
                     
@@ -159,11 +153,14 @@ def run_login_thread(session_phone, run_headless=True):
                         add_log("⚠️ NOT LOGGED IN. Displaying QR code on dashboard. Please scan it.")
                         qr_alert_shown = True
                         
-                    # Take screenshot of the QR element and save it to the static folder
+                    # Take screenshot of the QR element and save it in memory as base64 data URL
                     try:
                         qr_el = bot.page.locator(qr_selector).first
                         if qr_el.is_visible():
-                            qr_el.screenshot(path=qr_path)
+                            qr_bytes = qr_el.screenshot()
+                            qr_b64_str = base64.b64encode(qr_bytes).decode("utf-8")
+                            with job_lock:
+                                job_status["qr_base64"] = f"data:image/png;base64,{qr_b64_str}"
                     except Exception as qr_err:
                         print(f"Error capturing QR: {qr_err}")
                         
@@ -181,15 +178,9 @@ def run_login_thread(session_phone, run_headless=True):
             except:
                 pass
                 
-    # Clean up QR code file on close
-    if os.path.exists(qr_path):
-        try:
-            os.remove(qr_path)
-        except Exception as e:
-            print(f"Warning: could not delete QR file during cleanup: {e}")
-            
     with job_lock:
         job_status["status"] = "idle"
+        job_status["qr_base64"] = None
     add_log("Login connection worker finished.")
 
 def run_send_thread(session_phone="Default", force_send=False):
@@ -203,32 +194,17 @@ def run_send_thread(session_phone="Default", force_send=False):
         
     config = load_config()
     history = core_main.load_history()
-    excel_path = config.get("excel_path", "students.xlsx")
     
-    if not os.path.exists(excel_path):
-        add_log(f"❌ Excel spreadsheet file '{excel_path}' not found. Please upload it first.")
-        with job_lock:
-            job_status["status"] = "idle"
-        return
-        
-    add_log(f"Reading spreadsheet: {excel_path}...")
     try:
-        df = pd.read_excel(excel_path)
+        db_students = database.get_students()
     except Exception as e:
-        add_log(f"❌ Error reading Excel: {str(e)}")
+        add_log(f"❌ Error reading database: {str(e)}")
         with job_lock:
             job_status["status"] = "idle"
         return
         
-    cols = config.get("columns", {})
-    name_col = cols.get("name", "Name")
-    phone_col = cols.get("phone", "Phone")
-    bday_col = cols.get("birthday", "Birthday")
-    
-    # Check columns
-    missing_cols = [c for c in [name_col, phone_col, bday_col] if c not in df.columns]
-    if missing_cols:
-        add_log(f"❌ Configuration error: Excel is missing columns: {missing_cols}")
+    if not db_students:
+        add_log("❌ No students directory found in database. Please upload Excel spreadsheet first.")
         with job_lock:
             job_status["status"] = "idle"
         return
@@ -241,14 +217,11 @@ def run_send_thread(session_phone="Default", force_send=False):
     add_log(f"Filtering students with birthdays matching: Month {today_month}, Day {today_day}...")
     
     birthdays_today = []
-    for idx, row in df.iterrows():
-        name = row[name_col]
-        phone_raw = row[phone_col]
-        bday_raw = row[bday_col]
+    for s in db_students:
+        name = s["name"]
+        phone_raw = s["phone"]
+        bday_raw = s["birthday"]
         
-        if pd.isna(name) or pd.isna(phone_raw) or pd.isna(bday_raw):
-            continue
-            
         parsed_bday = core_main.parse_birthday(bday_raw)
         if not parsed_bday:
             continue
@@ -287,7 +260,7 @@ def run_send_thread(session_phone="Default", force_send=False):
         job_status["total_count"] = len(pending_birthdays)
         
     # Start bot
-    session_dir = f".session/{session_phone}"
+    session_dir = get_session_dir(session_phone)
     bot = WhatsAppBot(user_data_dir=session_dir, headless=True)
     try:
         bot.start()
@@ -442,7 +415,7 @@ def get_status():
     config = load_config()
     excel_path = config.get("excel_path", "students.xlsx")
     excel_exists = os.path.exists(excel_path)
-    session_phone = request.args.get("session", "Default")
+    session_phone = request.args.get("session", "").strip()
     
     total_students = 0
     birthdays_count = 0
@@ -450,10 +423,10 @@ def get_status():
     sent_today_count = 0
     headers = []
     
+    # Load sheet headers if file exists (for mapping select options)
     if excel_exists:
         try:
             df = pd.read_excel(excel_path)
-            total_students = len(df)
             headers = [str(h).strip() for h in df.columns]
             
             # Heuristic guessing of column mapping config
@@ -501,40 +474,39 @@ def get_status():
                         
             if columns_changed:
                 save_config(config)
-                
-            # Reload mappings from updated config
-            name_col = cols_config.get("name", "Name")
-            phone_col = cols_config.get("phone", "Phone")
-            bday_col = cols_config.get("birthday", "Birthday")
-            
-            # Find matching birthdays
-            today = datetime.now()
-            tomorrow = today + timedelta(days=1)
-            
-            for idx, row in df.iterrows():
-                dob_val = row.get(bday_col)
-                parsed_dob = core_main.parse_birthday(dob_val)
-                if parsed_dob:
-                    dob_month, dob_day = parsed_dob
-                    # Check if today is birthday
-                    if dob_month == today.month and dob_day == today.day:
-                        birthdays_count += 1
-                        
-                        # Check if sent
-                        history = core_main.load_history()
-                        today_str = today.strftime("%Y-%m-%d")
-                        cleaned_p = core_main.clean_phone(df.iloc[idx].get(phone_col), config.get("default_country_code", "+91"))
-                        if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today_str):
-                            sent_today_count += 1
-                            
-                    # Check if tomorrow is birthday
-                    if dob_month == tomorrow.month and dob_day == tomorrow.day:
-                        birthdays_tomorrow_count += 1
         except Exception as e:
-            print(f"Error loading stats: {str(e)}")
+            print(f"Error guessing excel headers: {e}")
             
+    try:
+        db_students = database.get_students()
+        total_students = len(db_students)
+        
+        today = datetime.now()
+        tomorrow = today + timedelta(days=1)
+        today_str = today.strftime("%Y-%m-%d")
+        history = core_main.load_history()
+        
+        for s in db_students:
+            parsed_dob = core_main.parse_birthday(s["birthday"])
+            if parsed_dob:
+                dob_month, dob_day = parsed_dob
+                
+                # Check if today is birthday
+                if dob_month == today.month and dob_day == today.day:
+                    birthdays_count += 1
+                    
+                    cleaned_p = core_main.clean_phone(s["phone"], config.get("default_country_code", "+91"))
+                    if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today_str):
+                        sent_today_count += 1
+                        
+                # Check if tomorrow is birthday
+                if dob_month == tomorrow.month and dob_day == tomorrow.day:
+                    birthdays_tomorrow_count += 1
+    except Exception as e:
+        print(f"Error loading SQLite stats: {str(e)}")
+        
     return jsonify({
-        "excel_exists": excel_exists,
+        "excel_exists": excel_exists or total_students > 0,
         "excel_path": excel_path,
         "whatsapp_authenticated": check_session_exists(session_phone),
         "total_students": total_students,
@@ -548,24 +520,17 @@ def get_status():
 @app.route("/api/birthdays")
 def get_birthdays():
     config = load_config()
-    excel_path = config.get("excel_path", "students.xlsx")
-    session_phone = request.args.get("session", "Default")
+    session_phone = request.args.get("session", "")
     day_param = request.args.get("day", "today").lower()
     
-    if not os.path.exists(excel_path):
-        return jsonify({"date": datetime.now().strftime("%Y-%m-%d"), "birthdays": []})
-        
     birthdays = []
     try:
-        df = pd.read_excel(excel_path)
-        
-        name_col = config.get("columns", {}).get("name", "Name")
-        phone_col = config.get("columns", {}).get("phone", "Phone")
-        bday_col = config.get("columns", {}).get("birthday", "Birthday")
-        
+        db_students = database.get_students()
+        if not db_students:
+            return jsonify({"date": datetime.now().strftime("%Y-%m-%d"), "birthdays": []})
+            
         today = datetime.now()
         
-        # Calculate target date based on tab parameter
         if day_param == "tomorrow":
             target_date = today + timedelta(days=1)
         else:
@@ -575,24 +540,46 @@ def get_birthdays():
         history = core_main.load_history()
         month_val = int(request.args.get("month", today.month))
         
-        for idx, row in df.iterrows():
-            name = row.get(name_col)
-            phone = row.get(phone_col)
-            dob_val = row.get(bday_col)
+        for s in db_students:
+            name = s["name"]
+            phone = s["phone"]
+            dob_val = s["birthday"]
             
-            if pd.notna(name) and pd.notna(dob_val):
-                parsed_dob = core_main.parse_birthday(dob_val)
-                if not parsed_dob:
-                    continue
-                dob_month, dob_day = parsed_dob
+            parsed_dob = core_main.parse_birthday(dob_val)
+            if not parsed_dob:
+                continue
+            dob_month, dob_day = parsed_dob
+            
+            match = False
+            status = "pending"
+            
+            if day_param == "all":
+                match = True
+                try:
+                    bday_this_year = datetime(today.year, dob_month, dob_day)
+                except ValueError:
+                    bday_this_year = datetime(today.year, 3, 1)
+                    
+                today_midnight = datetime(today.year, today.month, today.day)
                 
-                match = False
-                status = "pending"
-                
-                # Matching filters
-                if day_param == "all":
+                if bday_this_year.date() < today_midnight.date():
+                    status = "passed"
+                elif bday_this_year.date() == today_midnight.date():
+                    cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
+                    if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today.strftime("%Y-%m-%d")):
+                        records = history.get("sent_records", [])
+                        record = next((r for r in records if r["date"] == today.strftime("%Y-%m-%d") and r["phone"] == cleaned_p), None)
+                        if record and record["status"] == "invalid_number":
+                            status = "failed"
+                        else:
+                            status = "sent"
+                    else:
+                        status = "pending"
+                else:
+                    status = "upcoming"
+            elif day_param == "month":
+                if dob_month == month_val:
                     match = True
-                    # Determine status (passed, today, upcoming)
                     try:
                         bday_this_year = datetime(today.year, dob_month, dob_day)
                     except ValueError:
@@ -615,64 +602,37 @@ def get_birthdays():
                             status = "pending"
                     else:
                         status = "upcoming"
-                elif day_param == "month":
-                    if dob_month == month_val:
-                        match = True
-                        try:
-                            bday_this_year = datetime(today.year, dob_month, dob_day)
-                        except ValueError:
-                            bday_this_year = datetime(today.year, 3, 1)
-                            
-                        today_midnight = datetime(today.year, today.month, today.day)
-                        
-                        if bday_this_year.date() < today_midnight.date():
-                            status = "passed"
-                        elif bday_this_year.date() == today_midnight.date():
-                            cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
-                            if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, today.strftime("%Y-%m-%d")):
-                                records = history.get("sent_records", [])
-                                record = next((r for r in records if r["date"] == today.strftime("%Y-%m-%d") and r["phone"] == cleaned_p), None)
-                                if record and record["status"] == "invalid_number":
-                                    status = "failed"
-                                else:
-                                    status = "sent"
+            else:
+                if dob_month == target_date.month and dob_day == target_date.day:
+                    match = True
+                    cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
+                    
+                    if day_param == "tomorrow":
+                        status = "upcoming"
+                    else:
+                        status = "pending"
+                        if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, target_date_str):
+                            records = history.get("sent_records", [])
+                            record = next((r for r in records if r["date"] == target_date_str and r["phone"] == cleaned_p), None)
+                            if record and record["status"] == "invalid_number":
+                                status = "failed"
                             else:
-                                status = "pending"
-                        else:
-                            status = "upcoming"
-                else:
-                    if dob_month == target_date.month and dob_day == target_date.day:
-                        match = True
-                        cleaned_p = core_main.clean_phone(phone, config.get("default_country_code", "+91"))
-                        
-                        if day_param == "tomorrow":
-                            status = "upcoming"
-                        else:
-                            status = "pending"
-                            if cleaned_p and core_main.is_already_sent_today(history, cleaned_p, target_date_str):
-                                records = history.get("sent_records", [])
-                                record = next((r for r in records if r["date"] == target_date_str and r["phone"] == cleaned_p), None)
-                                if record and record["status"] == "invalid_number":
-                                    status = "failed"
-                                else:
-                                    status = "sent"
-                                    
-                if match:
-                    # Beautiful standardized display birthday string
-                    month_name = datetime(2000, dob_month, 1).strftime('%B')
-                    display_bday = f"{dob_day:02d} {month_name}"
-                    
-                    birthdays.append({
-                        "name": str(name).strip(),
-                        "phone": str(phone).strip() if pd.notna(phone) else "",
-                        "birthday": display_bday,
-                        "status": status,
-                        "month_num": dob_month,
-                        "day_of_month": dob_day,
-                        "row": idx + 2  # Excel is 1-based, plus header row
-                    })
-                    
-        # Sort results chronologically
+                                status = "sent"
+                                
+            if match:
+                month_name = datetime(2000, dob_month, 1).strftime('%B')
+                display_bday = f"{dob_day:02d} {month_name}"
+                
+                birthdays.append({
+                    "name": str(name).strip(),
+                    "phone": str(phone).strip(),
+                    "birthday": display_bday,
+                    "status": status,
+                    "month_num": dob_month,
+                    "day_of_month": dob_day,
+                    "row": s["row_number"]
+                })
+                
         if day_param == "month":
             birthdays.sort(key=lambda x: x["day_of_month"])
         elif day_param == "all":
@@ -697,6 +657,8 @@ def manage_configuration():
         config["message_template"] = data.get("message_template", config["message_template"])
         config["min_delay_seconds"] = int(data.get("min_delay_seconds", config["min_delay_seconds"]))
         config["max_delay_seconds"] = int(data.get("max_delay_seconds", config["max_delay_seconds"]))
+        config["automated_sending"] = data.get("automated_sending", config.get("automated_sending", False))
+        config["scheduled_time"] = data.get("scheduled_time", config.get("scheduled_time", "09:00"))
         
         cols = data.get("columns", {})
         config["columns"]["name"] = cols.get("name", config["columns"]["name"])
@@ -721,7 +683,32 @@ def upload_file():
             config = load_config()
             save_path = config.get("excel_path", "students.xlsx")
             file.save(save_path)
-            return jsonify({"message": f"Successfully uploaded spreadsheet and saved to {save_path}"})
+            
+            df = pd.read_excel(save_path)
+            name_col = config.get("columns", {}).get("name", "Name")
+            phone_col = config.get("columns", {}).get("phone", "Phone")
+            bday_col = config.get("columns", {}).get("birthday", "Birthday")
+            
+            for col in [name_col, phone_col, bday_col]:
+                if col not in df.columns:
+                    return jsonify({"error": f"Excel missing column '{col}'. Update configuration columns first."}), 400
+                    
+            students_list = []
+            for idx, row in df.iterrows():
+                name = row.get(name_col)
+                phone = row.get(phone_col)
+                dob_val = row.get(bday_col)
+                if pd.notna(name) and pd.notna(dob_val):
+                    students_list.append({
+                        "name": str(name).strip(),
+                        "phone": str(phone).strip() if pd.notna(phone) else "",
+                        "birthday": str(dob_val).strip(),
+                        "row_number": idx + 2
+                    })
+                    
+            database.clear_students()
+            database.insert_students(students_list)
+            return jsonify({"message": f"Successfully parsed and updated database with {len(students_list)} students."})
         else:
             return jsonify({"error": "Only Microsoft Excel (.xlsx or .xls) spreadsheets are supported. Make sure the file extension is correct."}), 400
     except Exception as e:
@@ -729,7 +716,7 @@ def upload_file():
 
 @app.route("/api/sessions")
 def get_sessions():
-    session_dir = os.path.abspath(".session")
+    session_dir = get_session_dir("")
     sessions = []
     if os.path.exists(session_dir):
         try:
@@ -783,7 +770,7 @@ def delete_session():
         return jsonify({"message": "Default session profile cleared successfully."})
         
     # Clear custom phone session folder
-    session_dir = os.path.abspath(f".session/{session_phone}")
+    session_dir = get_session_dir(session_phone)
     if os.path.exists(session_dir):
         try:
             shutil.rmtree(session_dir)
@@ -795,16 +782,13 @@ def delete_session():
 
 @app.route("/api/qr-status")
 def get_qr_status():
-    session_phone = request.args.get("session", "Default").strip()
-    if not session_phone:
-        session_phone = "Default"
-    qr_filename = f"qr_{session_phone}.png"
-    qr_path = os.path.join(app.static_folder, qr_filename)
-    if os.path.exists(qr_path):
-        return jsonify({
-            "qr_available": True,
-            "qr_url": f"/static/{qr_filename}?t={int(time.time() * 1000)}"
-        })
+    with job_lock:
+        qr_b64 = job_status.get("qr_base64")
+        if qr_b64:
+            return jsonify({
+                "qr_available": True,
+                "qr_url": qr_b64
+            })
     return jsonify({"qr_available": False})
 
 @app.route("/api/login-whatsapp", methods=["POST"])
@@ -853,10 +837,14 @@ def get_history_log():
     return jsonify(core_main.load_history().get("sent_records", []))
 
 if __name__ == "__main__":
+    # Initialize SQLite database
+    database.init_db()
+    
     # Start background daily wisher scheduler
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
         scheduler_thread = threading.Thread(target=run_scheduler)
         scheduler_thread.daemon = True
         scheduler_thread.start()
 
-    app.run(host="0.0.0.0", port=8082, debug=True)
+    port = int(os.environ.get("PORT", 8082))
+    app.run(host="0.0.0.0", port=port, debug=True)

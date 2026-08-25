@@ -9,55 +9,43 @@ from datetime import datetime
 import pandas as pd
 from whatsapp_bot import WhatsAppBot
 
+import database
+
 # Path to local directory files
 CONFIG_FILE = "config.json"
 HISTORY_FILE = "history.json"
 
 def load_config():
-    if not os.path.exists(CONFIG_FILE):
-        print(f"❌ Configuration file '{CONFIG_FILE}' not found. Please create it first.")
-        sys.exit(1)
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+    return database.get_config()
 
 def load_history():
-    if os.path.exists(HISTORY_FILE):
+    records = database.get_history_records()
+    legacy_records = []
+    for r in records:
         try:
-            with open(HISTORY_FILE, "r") as f:
-                data = json.load(f)
-                if not isinstance(data, dict) or "sent_records" not in data:
-                    data = {"sent_records": []}
-                return data
-        except json.JSONDecodeError:
-            print("⚠️ Warning: history.json is corrupted. Reinitializing history.")
-            return {"sent_records": []}
-    return {"sent_records": []}
+            date_str = r["timestamp"].split(" ")[0]
+        except:
+            date_str = ""
+        legacy_records.append({
+            "date": date_str,
+            "timestamp": r["timestamp"],
+            "name": r["name"],
+            "phone": r["phone"],
+            "status": r["status"],
+            "sender_profile": r["session_phone"]
+        })
+    return {"sent_records": legacy_records}
 
 def save_history(history):
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(history, f, indent=2)
+    pass
 
 def is_already_sent_today(history, phone, today_str):
     records = history.get("sent_records", [])
     return any(r["date"] == today_str and r["phone"] == phone for r in records)
 
 def add_history_record(history, name, phone, status, sender_profile="Default"):
-    today_str = datetime.now().strftime("%Y-%m-%d")
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Avoid duplicate records for the same person on the same day
-    records = history.get("sent_records", [])
-    if not any(r["date"] == today_str and r["phone"] == phone and r["status"] == status for r in records):
-        records.append({
-            "date": today_str,
-            "timestamp": timestamp_str,
-            "name": name,
-            "phone": phone,
-            "status": status,
-            "sender_profile": sender_profile
-        })
-    history["sent_records"] = records
-    save_history(history)
+    database.add_history_record(timestamp_str, name, phone, status, sender_profile)
 
 def send_macos_notification(title, message):
     try:

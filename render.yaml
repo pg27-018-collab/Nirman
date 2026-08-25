@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: whatsapp-birthday-wisher
+    runtime: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /api/job-status
+    envVars:
+      - key: PORT
+        value: 8082
+      - key: DATA_DIR
+        value: /data
+    disk:
+      name: data-volume
+      mountPath: /data
+      sizeGB: 1
