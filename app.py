@@ -41,24 +41,8 @@ def add_log(message):
 
 def check_session_exists(session_phone="Default"):
     if not session_phone:
-        session_phone = "Default"
-    session_dir = os.path.abspath(f".session/{session_phone}")
-    if session_phone == "Default":
-        # Check specific Default folder first
-        if os.path.exists(session_dir) and os.listdir(session_dir):
-            return True
-        # Legacy support: check if there are browser session files directly in .session/
-        root_session = os.path.abspath(".session")
-        if os.path.exists(root_session):
-            items = os.listdir(root_session)
-            # If files exist directly in .session or default chromium folders exist
-            files = [n for n in items if os.path.isfile(os.path.join(root_session, n))]
-            dirs = [n for n in items if os.path.isdir(os.path.join(root_session, n)) and n not in ("Default",)]
-            # If default chromium folders (e.g. BrowserMetrics, GrShaderCache) are present
-            if files or any(n in ("BrowserMetrics", "GrShaderCache", "Local State") for n in items):
-                return True
         return False
-        
+    session_dir = os.path.abspath(f".session/{session_phone}")
     if os.path.exists(session_dir) and os.listdir(session_dir):
         return True
     return False
@@ -100,7 +84,42 @@ def run_login_thread(session_phone, run_headless=True):
     logged_in = False
     session_dir = f".session/{session_phone}"
     
-    # Infinite loop to keep checking/relaunching until login is complete
+    # Standard and alternative selectors to confirm logged-in state
+    chatlist_selector = 'div[data-testid="chat-list"], div#pane-side, span[data-testid="default-user-profile"], div[data-testid="intro-text"], span[data-testid="menu"], div[role="textbox"]'
+    
+    # 1. Quick initial check: if session directory exists, launch silently to check if already authenticated.
+    # If yes, we skip showing/loading QR completely!
+    if check_session_exists(session_phone):
+        add_log("Profile directory exists. Performing quick background authentication check...")
+        bot = WhatsAppBot(user_data_dir=session_dir, headless=True)
+        try:
+            bot.start()
+            bot.page.goto("https://web.whatsapp.com/")
+            # Wait up to 8s for session to restore
+            for _ in range(4):
+                if bot.page.locator(chatlist_selector).count() > 0:
+                    add_log("✅ Profile is already authenticated! Skipping connection setup.")
+                    logged_in = True
+                    break
+                time.sleep(2)
+        except Exception as e:
+            print(f"Quick auth check warning: {e}")
+        finally:
+            try:
+                bot.close()
+            except:
+                pass
+                
+    if logged_in:
+        if os.path.exists(qr_path):
+            try: os.remove(qr_path)
+            except: pass
+        with job_lock:
+            job_status["status"] = "idle"
+        add_log("Login connection worker finished.")
+        return
+        
+    # 2. Main check/login retry loop
     while not logged_in:
         # Check if the job was cancelled or set back to idle by some other action
         with job_lock:
@@ -115,9 +134,7 @@ def run_login_thread(session_phone, run_headless=True):
             add_log("Browser context initialized. Checking authentication status...")
             bot.page.goto("https://web.whatsapp.com/")
             
-            chatlist_selector = 'div[data-testid="chat-list"], div#pane-side'
             qr_selector = 'canvas, div[data-testid="qrcode"]'
-            
             qr_alert_shown = False
             # Check status inside browser page loop (runs up to 10 minutes per browser instance before restarting context)
             start_time = time.time()
