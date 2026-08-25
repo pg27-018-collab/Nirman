@@ -51,7 +51,7 @@ function showToast(message, type = "success") {
 // Load System Status
 async function loadStatus() {
   try {
-    const res = await fetch(`/api/status?session=${currentSession}`);
+    const res = await fetch(`/api/status?session=${currentSession}&t=${Date.now()}`);
     const data = await res.json();
     
     // Check if authenticated to show blocker or dashboard
@@ -428,7 +428,7 @@ function startJobPolling() {
   
   statusPollInterval = setInterval(async () => {
     try {
-      const res = await fetch("/api/job-status");
+      const res = await fetch(`/api/job-status?t=${Date.now()}`);
       const job = await res.json();
       
       updateConsoleLogs(job.logs);
@@ -462,7 +462,7 @@ function startJobPolling() {
           
           // Poll QR code status from server
           try {
-            const qrRes = await fetch(`/api/qr-status?session=${currentSession}`);
+            const qrRes = await fetch(`/api/qr-status?session=${currentSession}&t=${Date.now()}`);
             const qrData = await qrRes.json();
             
             const qrContainer = document.getElementById("qrCodeContainer");

@@ -13,6 +13,13 @@ import main as core_main
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
+@app.after_request
+def add_header(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
 # Auto-install Playwright browsers on startup to enable instant sharing compatibility
 try:
     import subprocess
