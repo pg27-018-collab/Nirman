@@ -1,7 +1,7 @@
 // Frontend logic for WhatsApp Birthday Dashboard
 
 let statusPollInterval = null;
-let currentSession = "";
+let currentSession = localStorage.getItem("whatsapp_session") || "";
 let activeTab = "today";
 let birthdayRecords = [];
 let filteredRecords = [];
@@ -414,6 +414,17 @@ function setupActionButtons() {
       showToast("Server communication error", "error");
     }
   });
+  
+  // Bind change event to update the active profile and reload data
+  const selectEl = document.getElementById("sessionSelect");
+  if (selectEl) {
+    selectEl.addEventListener("change", (e) => {
+      currentSession = e.target.value;
+      localStorage.setItem("whatsapp_session", currentSession);
+      loadStatus();
+      loadBirthdays();
+    });
+  }
 }
 
 // Polling background thread status
@@ -612,6 +623,7 @@ async function loadSessions() {
       currentSession = sessions[0];
       select.value = currentSession;
     }
+    localStorage.setItem("whatsapp_session", currentSession);
   } catch (err) {
     console.error("Error loading sessions:", err);
   }
